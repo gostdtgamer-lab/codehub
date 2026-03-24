@@ -71,7 +71,7 @@ show_specs() {
 EOF
     echo -e "${NC}"
     echo -e "${PURPLE}┌──────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${PURPLE}│${NC}  ${R}☢️  GOSTDTGAMER PTERODACTYL SUITE${NC} ${DG}v1.0${NC}          ${DG}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
+    echo -e "${PURPLE}│${NC}  ${R}☢️  GOSTDTGAMER PTERODACTYL SUITE${NC} ${DG}v2.0${NC}          ${DG}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
     echo -e "${PURPLE}└──────────────────────────────────────────────────────────┘${NC}"
     echo -e "${DG}                   POWERED BY GOSTDTGAMER${NC}"
     echo ""
@@ -409,26 +409,338 @@ install_rdp() {
     echo -e "  ${DG}└─ Connect with X2Go client${NC}"
 }
 
+# ==================== NEW FEATURES ====================
+
+github_vps_maker() {
+    log "GitHub VPS Maker - Setting up GitHub Actions runners and deployment tools..."
+    
+    echo -e "\n  ${Y}🚀 GitHub VPS Maker${NC}"
+    echo -e "  ${DG}├─ This will set up GitHub Actions runner and deployment tools${NC}"
+    
+    # Install GitHub CLI
+    echo -e "  ${DG}├─ Installing GitHub CLI...${NC}"
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+    apt-get update -y >> "$LOG_FILE" 2>&1
+    apt-get install -y gh >> "$LOG_FILE" 2>&1
+    
+    # Install GitHub Actions Runner
+    echo -e "  ${DG}├─ Setting up GitHub Actions Runner...${NC}"
+    mkdir -p /opt/actions-runner
+    cd /opt/actions-runner
+    
+    LATEST_RUNNER=$(curl -s https://api.github.com/repos/actions/runner/releases/latest | grep "browser_download_url.*linux-x64" | grep -v ".sha256" | cut -d '"' -f 4)
+    curl -L -o actions-runner.tar.gz "$LATEST_RUNNER" 2>&1 | tee -a "$LOG_FILE"
+    tar -xzf actions-runner.tar.gz
+    rm actions-runner.tar.gz
+    
+    echo -e "  ${Y}├─ GitHub Actions Runner Configuration${NC}"
+    echo -ne "  ${DG}├─ Enter GitHub repository URL (or press Enter to skip): ${NC}"
+    read -r repo_url
+    
+    if [[ -n "$repo_url" ]]; then
+        echo -ne "  ${DG}├─ Enter GitHub token (with repo scope): ${NC}"
+        read -r github_token
+        
+        ./config.sh --url "$repo_url" --token "$github_token" --unattended
+        ./svc.sh install
+        ./svc.sh start
+        success "GitHub Actions Runner configured and started"
+    fi
+    
+    # Install deployment tools
+    echo -e "  ${DG}├─ Installing deployment tools...${NC}"
+    apt-get install -y ansible terraform 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Install kubectl if needed
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" >> "$LOG_FILE" 2>&1
+    chmod +x kubectl
+    mv kubectl /usr/local/bin/
+    
+    success "GitHub VPS Maker completed"
+    echo -e "  ${G}├─ GitHub CLI: ${W}gh --version${NC}"
+    echo -e "  ${G}├─ Actions Runner: ${W}/opt/actions-runner${NC}"
+    echo -e "  ${G}└─ Deployment tools: Ansible, Terraform, kubectl${NC}"
+}
+
+idx_tool_setup() {
+    log "IDX Tool Setup - Installing development and IDE tools..."
+    
+    echo -e "\n  ${Y}🔧 IDX Tool Setup${NC}"
+    echo -e "  ${DG}├─ This will install development tools and IDEs${NC}"
+    
+    # Install VS Code
+    echo -e "  ${DG}├─ Installing VS Code...${NC}"
+    wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg
+    install -D -o root -g root -m 644 packages.microsoft.gpg /etc/apt/keyrings/packages.microsoft.gpg
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" | tee /etc/apt/sources.list.d/vscode.list
+    rm -f packages.microsoft.gpg
+    apt-get update -y >> "$LOG_FILE" 2>&1
+    apt-get install -y code >> "$LOG_FILE" 2>&1
+    
+    # Install Docker Compose
+    echo -e "  ${DG}├─ Installing Docker Compose...${NC}"
+    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+    
+    # Install development tools
+    echo -e "  ${DG}├─ Installing development tools...${NC}"
+    apt-get install -y build-essential python3-pip python3-venv golang-go \
+        default-jdk postgresql-client redis-tools 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Install npm global tools
+    echo -e "  ${DG}├─ Installing npm global tools...${NC}"
+    npm install -g yarn pm2 nodemon typescript ts-node 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Install Python tools
+    echo -e "  ${DG}├─ Installing Python tools...${NC}"
+    pip3 install virtualenv pipenv poetry 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Create development directory
+    mkdir -p /opt/dev/projects
+    chmod 755 /opt/dev
+    
+    success "IDX Tool Setup completed"
+    echo -e "  ${G}├─ VS Code: ${W}code${NC}"
+    echo -e "  ${G}├─ Docker Compose: ${W}docker-compose${NC}"
+    echo -e "  ${G}├─ Node.js tools: yarn, pm2, nodemon${NC}"
+    echo -e "  ${G}├─ Python tools: virtualenv, pipenv, poetry${NC}"
+    echo -e "  ${G}└─ Dev directory: ${W}/opt/dev/projects${NC}"
+}
+
+idx_vps_maker() {
+    log "IDX VPS Maker - Setting up IDX (Project IDX) development environment..."
+    
+    echo -e "\n  ${Y}⚡ IDX VPS Maker${NC}"
+    echo -e "  ${DG}├─ Setting up Project IDX compatible environment${NC}"
+    
+    # Install Web IDE (Code-Server)
+    echo -e "  ${DG}├─ Installing Code-Server (Web IDE)...${NC}"
+    curl -fsSL https://code-server.dev/install.sh | sh 2>&1 | tee -a "$LOG_FILE"
+    
+    # Create config directory
+    mkdir -p /root/.config/code-server
+    
+    # Generate random password for code-server
+    CODE_PASS=$(openssl rand -base64 12)
+    cat > /root/.config/code-server/config.yaml << EOF
+bind-addr: 0.0.0.0:8080
+auth: password
+password: $CODE_PASS
+cert: false
+EOF
+    
+    # Create systemd service for code-server
+    cat > /etc/systemd/system/code-server.service << EOF
+[Unit]
+Description=code-server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/code-server
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl enable code-server
+    systemctl start code-server
+    
+    # Install File Browser
+    echo -e "  ${DG}├─ Installing File Browser...${NC}"
+    curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash 2>&1 | tee -a "$LOG_FILE"
+    
+    cat > /etc/systemd/system/filebrowser.service << EOF
+[Unit]
+Description=File Browser
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/filebrowser -r / -a 0.0.0.0 -p 8081
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl enable filebrowser
+    systemctl start filebrowser
+    
+    # Install Portainer for container management
+    echo -e "  ${DG}├─ Installing Portainer...${NC}"
+    docker volume create portainer_data >> "$LOG_FILE" 2>&1
+    docker run -d -p 8000:8000 -p 9443:9443 --name portainer --restart=always \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v portainer_data:/data portainer/portainer-ce:latest >> "$LOG_FILE" 2>&1
+    
+    # Create workspace
+    mkdir -p /opt/idx-workspace
+    chmod 777 /opt/idx-workspace
+    
+    # Save credentials
+    cat > /root/idx_credentials.txt << EOF
+====================================
+IDX VPS MAKER - ACCESS CREDENTIALS
+====================================
+Code-Server (Web IDE): http://$(curl -s ifconfig.me):8080
+Code-Server Password: $CODE_PASS
+
+File Browser: http://$(curl -s ifconfig.me):8081
+File Browser Login: admin/admin (first login will prompt to change)
+
+Portainer: https://$(curl -s ifconfig.me):9443
+Portainer Setup: Create admin user on first login
+
+Workspace Directory: /opt/idx-workspace
+====================================
+EOF
+    
+    success "IDX VPS Maker completed"
+    echo -e "  ${G}├─ Web IDE: ${W}http://$(curl -s ifconfig.me):8080${NC}"
+    echo -e "  ${G}├─ File Browser: ${W}http://$(curl -s ifconfig.me):8081${NC}"
+    echo -e "  ${G}├─ Portainer: ${W}https://$(curl -s ifconfig.me):9443${NC}"
+    echo -e "  ${G}└─ Credentials saved: ${W}/root/idx_credentials.txt${NC}"
+}
+
+real_vps_setup() {
+    log "Real VPS (Any + KVM) - Setting up complete VPS environment..."
+    
+    echo -e "\n  ${Y}🌐 Real VPS Setup (Any + KVM)${NC}"
+    echo -e "  ${DG}├─ This will set up a complete VPS with virtualization${NC}"
+    
+    # Check for KVM support
+    echo -e "  ${DG}├─ Checking KVM support...${NC}"
+    if grep -E -c '(vmx|svm)' /proc/cpuinfo > /dev/null; then
+        echo -e "  ${G}│  ✓ KVM supported${NC}"
+        
+        # Install KVM and virtualization tools
+        apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virt-manager \
+            cpu-checker virtinst 2>&1 | tee -a "$LOG_FILE" | while read line; do
+            echo -e "  ${DG}│  ${NC}$line"
+        done
+        
+        systemctl enable libvirtd
+        systemctl start libvirtd
+        
+        # Add current user to libvirt group
+        usermod -aG libvirt,libvirt-qemu,kvm $SUDO_USER 2>/dev/null || true
+        
+        success "KVM virtualization installed"
+    else
+        echo -e "  ${Y}│  ⚠ KVM not supported on this VPS${NC}"
+    fi
+    
+    # Install LXD for containers
+    echo -e "  ${DG}├─ Installing LXD...${NC}"
+    snap install lxd 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    lxd init --auto
+    
+    # Install Cockpit for web management
+    echo -e "  ${DG}├─ Installing Cockpit...${NC}"
+    apt-get install -y cockpit cockpit-machines cockpit-docker 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    systemctl enable cockpit
+    systemctl start cockpit
+    
+    # Install cloud-init
+    echo -e "  ${DG}├─ Installing cloud-init...${NC}"
+    apt-get install -y cloud-init cloud-utils 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Create VM storage directory
+    mkdir -p /var/lib/libvirt/images/vms
+    chmod 755 /var/lib/libvirt/images/vms
+    
+    # Create network bridge
+    cat > /etc/netplan/01-netcfg.yaml << EOF
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: yes
+  bridges:
+    br0:
+      interfaces: [eth0]
+      dhcp4: yes
+EOF
+    
+    # Install monitoring for VPS
+    echo -e "  ${DG}├─ Installing VPS monitoring...${NC}"
+    apt-get install -y prometheus-node-exporter 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    success "Real VPS Setup completed"
+    echo -e "\n  ${G}├─ KVM Status: ${W}$([ -f /dev/kvm ] && echo "Available" || echo "Not available")${NC}"
+    echo -e "  ${G}├─ LXD: ${W}lxc list${NC}"
+    echo -e "  ${G}├─ Cockpit: ${W}https://$(curl -s ifconfig.me):9090${NC}"
+    echo -e "  ${G}├─ VM Storage: ${W}/var/lib/libvirt/images/vms${NC}"
+    echo -e "  ${G}└─ Monitoring: ${W}http://$(curl -s ifconfig.me):9100${NC}"
+}
+
+# ==================== MAIN MENU ====================
+
 main_menu() {
     clear
     show_specs
     
     echo -e "\n${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${C}                    PTERODACTYL INSTALLATION MENU${NC}"
+    echo -e "${C}                    GOSTDTGAMER VPS DEPLOYMENT SUITE${NC}"
     echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${C}  🐧 PTERODACTYL INSTALLATION${NC}"
+    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
     echo -e "  ${G}1)${NC} Install Everything (Full Pterodactyl Suite)"
     echo -e "  ${G}2)${NC} Install Pterodactyl Panel Only"
     echo -e "  ${G}3)${NC} Install Pterodactyl Wings Only"
+    echo ""
+    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${C}  🛠️  ADDITIONAL TOOLS${NC}"
+    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
     echo -e "  ${G}4)${NC} Install Node.js"
     echo -e "  ${G}5)${NC} Install Tailscale VPN"
     echo -e "  ${G}6)${NC} Install Cloudflared (with token setup)"
     echo -e "  ${G}7)${NC} Install RDP (Remote Desktop)"
     echo -e "  ${G}8)${NC} Install Norfurch (Monitoring Tools)"
-    echo -e "  ${G}9)${NC} View System Specs"
-    echo -e "  ${G}10)${NC} View Installation Log"
-    echo -e "  ${R}0)${NC} Exit"
+    echo ""
+    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${C}  🚀 ADVANCED DEPLOYMENT FEATURES${NC}"
+    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "  ${G}9)${NC} 🚀 GitHub VPS Maker (Actions Runner + Deployment Tools)"
+    echo -e "  ${G}10)${NC} 🔧 IDX Tool Setup (Dev Tools + IDE)"
+    echo -e "  ${G}11)${NC} ⚡ IDX VPS Maker (Web IDE + File Browser + Portainer)"
+    echo -e "  ${G}12)${NC} 🌐 Real VPS (Any + KVM) - Full Virtualization Setup"
+    echo ""
+    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${C}  ℹ️  INFORMATION${NC}"
+    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "  ${G}13)${NC} View System Specifications"
+    echo -e "  ${G}14)${NC} View Installation Log"
+    echo -e "  ${R}0)${NC} ❌ Exit"
     echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -ne "  ${W}Enter your choice [0-10]: ${NC}"
+    echo -ne "  ${W}Enter your choice [0-14]: ${NC}"
     read -r choice
     
     case $choice in
@@ -492,13 +804,33 @@ main_menu() {
             install_norfurch
             ;;
         9)
+            update_system
+            github_vps_maker
+            ;;
+        10)
+            update_system
+            idx_tool_setup
+            ;;
+        11)
+            update_system
+            idx_vps_maker
+            ;;
+        12)
+            update_system
+            real_vps_setup
+            ;;
+        13)
             show_specs
-            echo -e "\n${W}Press Enter...${NC}"
+            echo -e "\n${W}Press Enter to continue...${NC}"
             read -r
             main_menu
             ;;
-        10)
-            [[ -f "$LOG_FILE" ]] && less "$LOG_FILE" || echo "No log file"
+        14)
+            if [[ -f "$LOG_FILE" ]]; then
+                less "$LOG_FILE"
+            else
+                echo -e "${Y}No log file found${NC}"
+            fi
             main_menu
             ;;
         0)
