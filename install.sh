@@ -1,113 +1,85 @@
 #!/usr/bin/env bash
+# ==========================================================
+# NOBITA CLOUD SYSTEM | BANE-ANMESH 3S UPLINK
+# DATE: 2026-03-07 | UI-TYPE: SEMA-HYPER-VISUAL
+# ==========================================================
+set -euo pipefail
 
-RED='\033[1;31m'
-GREEN='\033[1;32m'
-CYAN='\033[1;36m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# --- SEMA-BANE THEME ---
+R='\033[1;38;5;196m'  # Crimson
+G='\033[1;38;5;82m'   # Emerald
+Y='\033[1;38;5;220m'  # Gold
+C='\033[1;38;5;51m'   # Cyan
+W='\033[1;38;5;255m'  # Pure White
+DG='\033[0;38;5;244m' # Steel Gray
+PURPLE='\033[1;38;5;141m'
+NC='\033[0m'          # Reset
 
-check_kvm(){
-if egrep -c '(vmx|svm)' /proc/cpuinfo > /dev/null; then
-echo "KVM: SUPPORTED"
+# --- CONFIG ---
+HOST="run.nobitahost.in"
+URL="https://${HOST}"
+NETRC="${HOME}/.netrc"
+IP="65.0.86.121"
+LOCL_IP="10.1.0.29"
+
+# --- UI RENDERER ---
+render_header() {
+    clear
+    echo -e "${G}"
+    cat << "EOF"
+███╗   ██╗ ██████╗ ██████╗ ██╗████████╗ █████╗      ██████╗██╗      ██████╗ ██╗   ██╗██████╗ 
+████╗  ██║██╔═══██╗██╔══██╗██║╚══██╔══╝██╔══██╗    ██╔════╝██║     ██╔═══██╗██║   ██║██╔══██╗
+██╔██╗ ██║██║   ██║██████╔╝██║   ██║   ███████║    ██║     ██║     ██║   ██║██║   ██║██║  ██║
+██║╚██╗██║██║   ██║██╔══██╗██║   ██║   ██╔══██║    ██║     ██║     ██║   ██║██║   ██║██║  ██║
+██║ ╚████║╚██████╔╝██████╔╝██║   ██║   ██║  ██║    ╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝
+╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚═╝   ╚═╝   ╚═╝  ╚═╝     ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝ 
+EOF
+    echo -e "${NC}"
+    echo -e "${PURPLE}┌──────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${PURPLE}│${NC}  ${R}☢️  BANE-ANMESH 3S UPLINK${NC} ${DG}v14.0${NC}          ${DG}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
+    echo -e "${PURPLE}└──────────────────────────────────────────────────────────┘${NC}"
+}
+
+render_header
+
+# --- NETWORK DIAGNOSTICS SIDEBAR ---
+echo -e "  ${C}NETWORK ROUTE DIAGNOSTICS${NC}"
+echo -e "  ${DG}├─ Public Endpoint :${NC} ${W}$IP${NC}"
+echo -e "  ${DG}├─ Local Gateway   :${NC} ${W}$LOCL_IP${NC}"
+echo -e "  ${DG}├─ Target Host     :${NC} ${W}$HOST${NC}"
+echo -e "  ${DG}└─ Security Level  :${NC} ${G}SSH V-65S${NC}"
+echo -e "${DG}────────────────────────────────────────────────────────────${NC}"
+
+# --- AUTHENTICATION SEQUENCE ---
+echo -e "\n  ${Y}[1/2] AUTHENTICATION SEQUENCE${NC}"
+echo -ne "  ${DG}├─ Linking Credentials...${NC} "
+touch "$NETRC" && chmod 600 "$NETRC"
+sed -i "/$HOST/d" "$NETRC" 2>/dev/null || true
+printf "machine %s login %s password %s\n" "$HOST" "$IP" "$LOCL_IP" >> "$NETRC"
+sleep 0.8
+echo -e "${G}SUCCESS${NC}"
+
+# --- UPLINK CONNECTION ---
+echo -e "\n  ${Y}[2/2] BANE UPLINK PROTOCOL${NC}"
+echo -ne "  ${DG}├─ Establishing Connection...${NC} "
+payload="$(mktemp)"
+trap "rm -f $payload" EXIT
+
+# Use silent curl with netrc
+if curl -fsSL -A "Bane-1s-Agent" --netrc -o "$payload" "$URL"; then
+    echo -e "${G}CONNECTED${NC}"
+    echo -e "  ${DG}└─ Agent Status:${NC} ${G}AUTHORIZED${NC}"
+
+    echo -e "\n${DG}────────────────────────────────────────────────────────────${NC}"
+    echo -ne "  ${W}Triggering execution in ${R}3s${NC} "
+    for i in {1..3}; do echo -ne "${R}.${NC}"; sleep 1; done
+    echo -e "\n"
+
+    # Execute payload
+    bash "$payload"
 else
-echo "KVM: NOT SUPPORTED"
+    echo -e "${R}FAILED${NC}"
+    echo -e "  ${DG}└─ Error Detail:${NC} ${R}Connection Terminated by Host${NC}"
+    echo -e "\n  ${R}[!] CRITICAL:${NC} Authentication handshake failed."
+    exit 1
 fi
-}
-
-banner(){
-clear
-echo -e "${CYAN}"
-echo "████████████████████████████████████████████"
-echo "        CODEHUB CLOUD VPS MANAGER"
-echo "████████████████████████████████████████████"
-echo -e "${NC}"
-check_kvm
-echo ""
-}
-
-install_lxd(){
-apt update -y
-apt install lxd -y
-lxd init --auto
-}
-
-select_os(){
-echo "Choose OS:"
-echo "1) Ubuntu 22.04"
-echo "2) Debian 12"
-echo "3) Alpine"
-read -p "OS Choice: " os
-
-case $os in
-1) IMAGE="images:ubuntu/22.04" ;;
-2) IMAGE="images:debian/12" ;;
-3) IMAGE="images:alpine/3.18" ;;
-*) echo "Invalid OS"; return ;;
-esac
-}
-
-create_vps(){
-
-select_os
-
-read -p "VPS Name: " NAME
-read -p "RAM (MB): " RAM
-read -p "CPU cores: " CPU
-read -p "Disk size (GB): " DISK
-read -p "Open Port: " PORT
-
-echo "Creating VPS..."
-
-lxc launch $IMAGE $NAME
-
-lxc config set $NAME limits.memory ${RAM}MB
-lxc config set $NAME limits.cpu $CPU
-
-lxc config device add $NAME root disk path=/ pool=default size=${DISK}GB
-
-IP=$(lxc list $NAME -c 4 | tail -n1)
-
-echo "VPS Created!"
-echo "IP: $IP"
-
-read -p "Start VPS now? (y/n): " start
-if [ "$start" = "y" ]; then
-lxc start $NAME
-fi
-}
-
-list_vps(){
-lxc list
-}
-
-delete_vps(){
-read -p "VPS Name to delete: " NAME
-lxc delete $NAME --force
-}
-
-while true
-do
-banner
-
-echo "VPS MANAGEMENT"
-echo "1) Install VPS System (LXD)"
-echo "2) Create VPS"
-echo "3) List VPS"
-echo "4) Delete VPS"
-echo "5) System Info"
-echo "0) Exit"
-
-read -p "Command: " choice
-
-case $choice in
-1) install_lxd ;;
-2) create_vps ;;
-3) list_vps ;;
-4) delete_vps ;;
-5) lscpu && free -h && df -h ;;
-0) exit ;;
-*) echo "Invalid option" ;;
-esac
-
-read -p "Press enter to continue..."
-done
