@@ -461,11 +461,11 @@ install_cloudflared() {
     echo -e "  ${GREEN}1)${NC} Yes, set up tunnel with token"
     echo -e "  ${RED}2)${NC} No, skip for now"
     echo ""
-    echo -ne "  ${WHITE}Enter choice [1-2]: ${NC}"
+    echo -ne "  ${WHITE}Enter your choice [1-2]: ${NC}"
     read token_choice
     
     if [[ "$token_choice" == "1" ]]; then
-        setup_cloudflare_tunnel
+        setup_cloudflare_with_token
     else
         echo -e "\n  ${YELLOW}You can set up a tunnel later by running:${NC}"
         echo -e "  ${WHITE}cloudflared tunnel login${NC}"
@@ -474,98 +474,94 @@ install_cloudflared() {
 }
 
 # Setup Cloudflare Tunnel with Token
-setup_cloudflare_tunnel() {
+setup_cloudflare_with_token() {
     echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
     echo -e "  ${GREEN}🔧 CLOUDFLARE TUNNEL SETUP${NC}"
     echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "  ${WHITE}You need to authenticate with Cloudflare to create a tunnel${NC}"
-    echo -e "  ${WHITE}This will open a browser window for authentication${NC}"
+    
+    # Ask for token
+    echo -e "  ${WHITE}Please enter your Cloudflare Tunnel Token:${NC}"
+    echo -e "  ${YELLOW}(You can get this from Cloudflare Dashboard > Zero Trust > Networks > Tunnels)${NC}"
     echo ""
-    echo -ne "  ${GREEN}Press Enter to start Cloudflare authentication...${NC}"
-    read
+    echo -ne "  ${GREEN}► Put your token: ${NC}"
+    read CLOUDFLARE_TOKEN
     
-    # Run tunnel login
-    echo -e "\n  ${WHITE}Authenticating with Cloudflare...${NC}"
-    cloudflared tunnel login
-    
-    echo -e "\n  ${GREEN}✓ Authentication successful!${NC}"
-    echo ""
-    
-    # Get tunnel name
-    echo -ne "  ${WHITE}Enter tunnel name (e.g., my-tunnel): ${NC}"
-    read tunnel_name
-    
-    if [[ -z "$tunnel_name" ]]; then
-        echo -e "  ${RED}Tunnel name cannot be empty${NC}"
+    if [[ -z "$CLOUDFLARE_TOKEN" ]]; then
+        echo -e "\n  ${RED}Token cannot be empty! Skipping tunnel setup.${NC}"
         return
     fi
     
-    # Create tunnel
-    echo -e "\n  ${WHITE}Creating tunnel: $tunnel_name...${NC}"
-    cloudflared tunnel create "$tunnel_name"
-    
-    # Get hostname
-    echo -ne "  ${WHITE}Enter hostname (e.g., panel.example.com): ${NC}"
-    read hostname
-    
-    if [[ -n "$hostname" ]]; then
-        # Route DNS
-        echo -e "\n  ${WHITE}Routing DNS...${NC}"
-        cloudflared tunnel route dns "$tunnel_name" "$hostname"
-        
-        # Create config file
-        mkdir -p /root/.cloudflared
-        cat > /root/.cloudflared/config.yml << EOF
-# Cloudflare Tunnel Configuration
-tunnel: $tunnel_name
-credentials-file: /root/.cloudflared/${tunnel_name}.json
-
-ingress:
-  - hostname: $hostname
-    service: http://localhost:80
-  - hostname: *
-    service: http_status:404
-EOF
-        
-        echo -e "\n  ${GREEN}✓ Tunnel configuration saved!${NC}"
-        
-        # Ask if user wants to run the tunnel
-        echo -e "\n  ${WHITE}Do you want to start the tunnel now?${NC}"
-        echo -e "  ${GREEN}1)${NC} Yes, run tunnel in background"
-        echo -e "  ${GREEN}2)${NC} Yes, install as service (auto-start on boot)"
-        echo -e "  ${RED}3)${NC} No, start later"
-        echo ""
-        echo -ne "  ${WHITE}Enter choice [1-3]: ${NC}"
-        read start_choice
-        
-        case $start_choice in
-            1)
-                echo -e "\n  ${WHITE}Starting tunnel in background...${NC}"
-                cloudflared tunnel run "$tunnel_name" &
-                echo -e "  ${GREEN}✓ Tunnel is running in background (PID: $!)${NC}"
-                echo -e "  ${YELLOW}To stop: pkill -f 'cloudflared tunnel'${NC}"
-                ;;
-            2)
-                echo -e "\n  ${WHITE}Installing tunnel as system service...${NC}"
-                cloudflared service install
-                systemctl enable cloudflared
-                systemctl start cloudflared
-                echo -e "  ${GREEN}✓ Tunnel service installed and started${NC}"
-                ;;
-            3)
-                echo -e "\n  ${YELLOW}To start tunnel later:${NC}"
-                echo -e "  ${WHITE}cloudflared tunnel run $tunnel_name${NC}"
-                ;;
-        esac
-    else
-        echo -e "\n  ${YELLOW}Tunnel created but no hostname configured${NC}"
-        echo -e "  ${WHITE}To add DNS route later:${NC}"
-        echo -e "  ${WHITE}cloudflared tunnel route dns $tunnel_name your-domain.com${NC}"
+    # Validate token format (basic check)
+    if [[ ! "$CLOUDFLARE_TOKEN" =~ ^[a-zA-Z0-9_-]+$ ]] && [[ ! "$CLOUDFLARE_TOKEN" =~ ^[A-Za-z0-9]+ ]]; then
+        echo -e "\n  ${YELLOW}⚠️  Token format looks unusual, but we'll try to use it.${NC}"
     fi
     
-    echo -e "\n  ${GREEN}✓ Cloudflare tunnel setup complete!${NC}"
-    echo -e "  ${WHITE}Configuration saved to: /root/.cloudflared/config.yml${NC}"
+    echo -e "\n  ${WHITE}Verifying and setting up tunnel with your token...${NC}"
+    
+    # Create tunnel using token
+    echo -e "  ${WHITE}Creating tunnel with provided token...${NC}"
+    
+    # Use the token to create and run tunnel
+    cloudflared tunnel --token "$CLOUDFLARE_TOKEN" run &
+    TUNNEL_PID=$!
+    
+    # Wait a moment to see if it starts
+    sleep 3
+    
+    # Check if tunnel is running
+    if ps -p $TUNNEL_PID > /dev/null 2>&1; then
+        success "✓ Tunnel created and running successfully!"
+        echo -e "\n  ${GREEN}Your Cloudflare Tunnel is now active!${NC}"
+        echo -e "  ${WHITE}Process ID: $TUNNEL_PID${NC}"
+        echo -e "  ${YELLOW}To stop the tunnel: kill $TUNNEL_PID${NC}"
+        
+        # Ask if user wants to install as service
+        echo -e "\n  ${WHITE}Do you want to install this tunnel as a service (auto-start on boot)?${NC}"
+        echo -e "  ${GREEN}1)${NC} Yes, install as service"
+        echo -e "  ${RED}2)${NC} No, keep running in background"
+        echo ""
+        echo -ne "  ${WHITE}Enter your choice [1-2]: ${NC}"
+        read service_choice
+        
+        if [[ "$service_choice" == "1" ]]; then
+            # Save token for service
+            mkdir -p /root/.cloudflared
+            cat > /root/.cloudflared/token << EOF
+$CLOUDFLARE_TOKEN
+EOF
+            
+            # Create service file
+            cat > /etc/systemd/system/cloudflared-tunnel.service << EOF
+[Unit]
+Description=Cloudflare Tunnel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/cloudflared tunnel --token $(cat /root/.cloudflared/token)
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            
+            systemctl daemon-reload
+            systemctl enable cloudflared-tunnel
+            systemctl start cloudflared-tunnel
+            
+            success "✓ Tunnel installed as system service"
+            echo -e "  ${WHITE}Status: systemctl status cloudflared-tunnel${NC}"
+            echo -e "  ${WHITE}Stop: systemctl stop cloudflared-tunnel${NC}"
+            echo -e "  ${WHITE}Start: systemctl start cloudflared-tunnel${NC}"
+        fi
+    else
+        echo -e "\n  ${RED}✗ Failed to start tunnel. Please check your token.${NC}"
+        echo -e "  ${YELLOW}You can try setting up manually:${NC}"
+        echo -e "  ${WHITE}cloudflared tunnel --token YOUR_TOKEN run${NC}"
+    fi
 }
 
 # Uninstall Cloudflared
@@ -578,14 +574,15 @@ uninstall_cloudflared() {
     echo ""
     
     # Stop cloudflared service if running
-    if systemctl is-active --quiet cloudflared 2>/dev/null; then
-        echo -e "  ${WHITE}Stopping cloudflared service...${NC}"
-        systemctl stop cloudflared >> "$LOG_FILE" 2>&1
-        systemctl disable cloudflared >> "$LOG_FILE" 2>&1
+    if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
+        echo -e "  ${WHITE}Stopping cloudflared tunnel service...${NC}"
+        systemctl stop cloudflared-tunnel >> "$LOG_FILE" 2>&1
+        systemctl disable cloudflared-tunnel >> "$LOG_FILE" 2>&1
+        rm -f /etc/systemd/system/cloudflared-tunnel.service
     fi
     
     # Kill any running cloudflared processes
-    pkill cloudflared 2>/dev/null || true
+    pkill -f "cloudflared tunnel" 2>/dev/null || true
     
     # Remove cloudflared package
     echo -e "  ${WHITE}Removing cloudflared package...${NC}"
@@ -617,124 +614,18 @@ show_cloudflared_status() {
         echo -e "  ${GREEN}✓ Cloudflared is installed${NC}"
         echo -e "  ${WHITE}Version: $(cloudflared version)${NC}"
         
-        # Check for tunnels
-        if [[ -d "/root/.cloudflared" ]]; then
-            echo -e "\n  ${WHITE}Configured tunnels:${NC}"
-            ls -la /root/.cloudflared/*.json 2>/dev/null | while read line; do
-                tunnel_file=$(basename "$line" .json)
-                echo -e "  ${GREEN}├─ $tunnel_file${NC}"
-            done
-        fi
-        
-        # Check if any tunnel is running
-        if pgrep -f "cloudflared tunnel" > /dev/null; then
-            echo -e "\n  ${GREEN}✓ Tunnel is currently running${NC}"
+        # Check if tunnel service is running
+        if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
+            echo -e "  ${GREEN}✓ Tunnel service is running${NC}"
+            systemctl status cloudflared-tunnel --no-pager | head -5
+        elif pgrep -f "cloudflared tunnel" > /dev/null; then
+            echo -e "  ${GREEN}✓ Tunnel is running in background${NC}"
+            echo -e "  ${WHITE}PID: $(pgrep -f 'cloudflared tunnel')${NC}"
         else
-            echo -e "\n  ${YELLOW}⚠ No tunnel is currently running${NC}"
+            echo -e "  ${YELLOW}⚠ No tunnel is currently running${NC}"
         fi
     else
         echo -e "  ${RED}✗ Cloudflared is not installed${NC}"
-    fi
-}
-
-# List Cloudflare Tunnels
-list_cloudflare_tunnels() {
-    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}📋 CLOUDFLARE TUNNELS${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    
-    if command -v cloudflared &> /dev/null; then
-        cloudflared tunnel list
-    else
-        echo -e "  ${RED}Cloudflared is not installed${NC}"
-    fi
-}
-
-# Start Cloudflare Tunnel
-start_cloudflare_tunnel() {
-    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}🚀 START CLOUDFLARE TUNNEL${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    
-    if ! command -v cloudflared &> /dev/null; then
-        echo -e "  ${RED}Cloudflared is not installed${NC}"
-        return
-    fi
-    
-    # List existing tunnels
-    echo -e "  ${WHITE}Existing tunnels:${NC}"
-    cloudflared tunnel list
-    
-    echo ""
-    echo -ne "  ${WHITE}Enter tunnel name to start: ${NC}"
-    read tunnel_name
-    
-    if [[ -z "$tunnel_name" ]]; then
-        echo -e "  ${RED}Tunnel name cannot be empty${NC}"
-        return
-    fi
-    
-    echo -e "\n  ${WHITE}Starting tunnel: $tunnel_name...${NC}"
-    cloudflared tunnel run "$tunnel_name" &
-    echo -e "  ${GREEN}✓ Tunnel started in background (PID: $!)${NC}"
-    echo -e "  ${YELLOW}To stop: pkill -f 'cloudflared tunnel'${NC}"
-}
-
-# Stop Cloudflare Tunnel
-stop_cloudflare_tunnel() {
-    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${RED}🛑 STOP CLOUDFLARE TUNNEL${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    
-    if pgrep -f "cloudflared tunnel" > /dev/null; then
-        echo -e "  ${WHITE}Stopping all Cloudflare tunnels...${NC}"
-        pkill -f "cloudflared tunnel"
-        echo -e "  ${GREEN}✓ All tunnels stopped${NC}"
-    else
-        echo -e "  ${YELLOW}No tunnels are currently running${NC}"
-    fi
-}
-
-# Delete Cloudflare Tunnel
-delete_cloudflare_tunnel() {
-    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${RED}🗑️  DELETE CLOUDFLARE TUNNEL${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    
-    if ! command -v cloudflared &> /dev/null; then
-        echo -e "  ${RED}Cloudflared is not installed${NC}"
-        return
-    fi
-    
-    # List existing tunnels
-    echo -e "  ${WHITE}Existing tunnels:${NC}"
-    cloudflared tunnel list
-    
-    echo ""
-    echo -ne "  ${WHITE}Enter tunnel name to delete: ${NC}"
-    read tunnel_name
-    
-    if [[ -z "$tunnel_name" ]]; then
-        echo -e "  ${RED}Tunnel name cannot be empty${NC}"
-        return
-    fi
-    
-    echo -ne "  ${RED}Delete tunnel '$tunnel_name'? (y/n): ${NC}"
-    read confirm
-    
-    if [[ "$confirm" == "y" ]]; then
-        # Stop tunnel if running
-        pkill -f "cloudflared tunnel.*$tunnel_name" 2>/dev/null || true
-        
-        # Delete tunnel
-        cloudflared tunnel delete "$tunnel_name"
-        echo -e "  ${GREEN}✓ Tunnel deleted${NC}"
-    else
-        echo -e "  ${YELLOW}Cancelled${NC}"
     fi
 }
 
@@ -922,13 +813,10 @@ cloudflared_menu() {
             echo -e "  ${GREEN}Status: CLOUDFLARED IS INSTALLED${NC}"
             echo -e "  ${WHITE}Version: $(cloudflared version 2>/dev/null | head -1)${NC}"
             
-            # Check for tunnels
-            if [[ -d "/root/.cloudflared" ]] && ls /root/.cloudflared/*.json &>/dev/null; then
-                echo -e "  ${GREEN}Tunnels: $(ls /root/.cloudflared/*.json 2>/dev/null | wc -l) tunnel(s) configured${NC}"
-            fi
-            
             # Check if tunnel is running
-            if pgrep -f "cloudflared tunnel" > /dev/null; then
+            if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
+                echo -e "  ${GREEN}Tunnel Status: SERVICE RUNNING ✓${NC}"
+            elif pgrep -f "cloudflared tunnel" > /dev/null; then
                 echo -e "  ${GREEN}Tunnel Status: RUNNING ✓${NC}"
             else
                 echo -e "  ${YELLOW}Tunnel Status: NOT RUNNING${NC}"
@@ -941,34 +829,42 @@ cloudflared_menu() {
         echo -e "  ${GREEN}1)${NC} Install Cloudflared (with token setup)"
         echo -e "  ${RED}2)${NC} Uninstall Cloudflared"
         echo -e "  ${GREEN}3)${NC} Show Status"
-        echo -e "  ${GREEN}4)${NC} List Tunnels"
-        echo -e "  ${GREEN}5)${NC} Create/Configure New Tunnel (with token)"
-        echo -e "  ${GREEN}6)${NC} Start a Tunnel"
-        echo -e "  ${RED}7)${NC} Stop All Tunnels"
-        echo -e "  ${RED}8)${NC} Delete a Tunnel"
+        echo -e "  ${GREEN}4)${NC} Setup Tunnel with Token"
+        echo -e "  ${GREEN}5)${NC} Start Tunnel (if token saved)"
+        echo -e "  ${RED}6)${NC} Stop Tunnel"
         echo -e "  ${YELLOW}0)${NC} Back to Main Menu"
         echo ""
-        echo -ne "${WHITE}Enter your choice [0-8]: ${NC}"
+        echo -ne "${WHITE}Enter your choice [0-6]: ${NC}"
         read choice
         
         case $choice in
             1) install_cloudflared ;;
             2) uninstall_cloudflared ;;
             3) show_cloudflared_status ;;
-            4) list_cloudflare_tunnels ;;
-            5) setup_cloudflare_tunnel ;;
-            6) start_cloudflare_tunnel ;;
-            7) stop_cloudflare_tunnel ;;
-            8) delete_cloudflare_tunnel ;;
+            4) setup_cloudflare_with_token ;;
+            5)
+                if [[ -f "/root/.cloudflared/token" ]]; then
+                    echo -e "${YELLOW}Starting tunnel with saved token...${NC}"
+                    cloudflared tunnel --token "$(cat /root/.cloudflared/token)" run &
+                    echo -e "${GREEN}Tunnel started in background${NC}"
+                else
+                    echo -e "${RED}No saved token found. Please setup tunnel first.${NC}"
+                fi
+                echo -ne "\n${WHITE}Press Enter...${NC}"
+                read
+                ;;
+            6)
+                pkill -f "cloudflared tunnel" 2>/dev/null || true
+                if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
+                    systemctl stop cloudflared-tunnel
+                fi
+                echo -e "${GREEN}All tunnels stopped${NC}"
+                echo -ne "\n${WHITE}Press Enter...${NC}"
+                read
+                ;;
             0) break ;;
             *) echo -e "${RED}Invalid option${NC}"; sleep 1 ;;
         esac
-        
-        if [[ $choice -ge 1 && $choice -le 8 ]] && [[ $choice -ne 0 ]]; then
-            echo ""
-            echo -ne "${WHITE}Press Enter to continue...${NC}"
-            read
-        fi
     done
 }
 
