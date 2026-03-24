@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ==========================================================
-# GOSTDTGAMER VPS DEPLOYMENT SUITE
+# GOSTDTGAMER PTERODACTYL DEPLOYMENT SUITE
+# Supports: Ubuntu 20.04/22.04, Debian 11/12
 # DATE: 2026-03-25
 # ==========================================================
 
@@ -13,12 +14,13 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
+PURPLE='\033[0;35m'
 NC='\033[0m'
 
 # Config
-LOG_FILE="/tmp/gostdtgamer.log"
-VM_LIST="/tmp/vms.list"
-touch "$VM_LIST"
+LOG_FILE="/tmp/pterodactyl_install.log"
+MYSQL_ROOT_PASS=""
+MYSQL_PTERO_PASS=""
 
 # Functions
 log() {
@@ -42,413 +44,484 @@ check_root() {
     fi
 }
 
-# Show system info
-show_info() {
+# Detect OS
+detect_os() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        OS=$ID
+        VER=$VERSION_ID
+    else
+        error "Cannot detect OS"
+    fi
+    
+    if [[ "$OS" != "ubuntu" && "$OS" != "debian" ]]; then
+        error "This script only supports Ubuntu and Debian"
+    fi
+    
+    log "Detected OS: $OS $VER"
+}
+
+# Show header
+show_header() {
     clear
     echo -e "${CYAN}"
     cat << "EOF"
-   _____       _       _   _           _     
-  / ____|     | |     | | | |         | |    
- | |  __  ___ | |_ ___| |_| | __ _  __| |___ 
- | | |_ |/ _ \| __/ _ \  _  |/ _` |/ _` / __|
- | |__| | (_) | ||  __/ | | | (_| | (_| \__ \
-  \_____|\___/ \__\___\_| |_/\__,_|\__,_|___/
-                                             
+██████╗ ████████╗███████╗██████╗  ██████╗ ██████╗  █████╗  ██████╗████████╗██╗   ██╗██╗     
+██╔══██╗╚══██╔══╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔════╝╚══██╔══╝╚██╗ ██╔╝██║     
+██████╔╝   ██║   █████╗  ██║  ██║██║  ██║██████╔╝███████║██║        ██║    ╚████╔╝ ██║     
+██╔═══╝    ██║   ██╔══╝  ██║  ██║██║  ██║██╔══██╗██╔══██║██║        ██║     ╚██╔╝  ██║     
+██║        ██║   ███████╗██████╔╝╚██████╔╝██║  ██║██║  ██║╚██████╗   ██║      ██║   ███████╗
+╚═╝        ╚═╝   ╚══════╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝      ╚═╝   ╚══════╝
 EOF
     echo -e "${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}         GOSTDTGAMER VPS DEPLOYMENT SUITE${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    
-    # System info
-    echo -e "${CYAN}System Information:${NC}"
-    echo -e "  CPU Cores: $(nproc)"
-    echo -e "  RAM: $(free -h | awk '/^Mem:/ {print $2}')"
-    echo -e "  Disk: $(df -h / | awk 'NR==2 {print $2}') (Free: $(df -h / | awk 'NR==2 {print $4}'))"
-    echo -e "  OS: $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
-    echo -e "  IP: $(curl -s ifconfig.me 2>/dev/null || echo 'Unknown')"
+    echo -e "${PURPLE}┌──────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${PURPLE}│${NC}  ${RED}☢️  GOSTDTGAMER PTERODACTYL SUITE${NC} ${GREEN}v1.0${NC}              ${CYAN}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
+    echo -e "${PURPLE}└──────────────────────────────────────────────────────────┘${NC}"
+    echo -e "${GREEN}                   POWERED BY GOSTDTGAMER${NC}"
     echo ""
 }
 
-# List VMs
-list_vms() {
-    if [[ ! -s "$VM_LIST" ]]; then
-        echo -e "${YELLOW}No VMs found. Create one first!${NC}"
-        return 1
-    fi
+# Show system info
+show_info() {
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}                    SYSTEM INFORMATION${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
-    echo -e "${GREEN}Existing VMs:${NC}"
-    local i=1
-    while IFS='|' read -r name cpu ram disk os ports; do
-        echo -e "  ${YELLOW}$i)${NC} $name - ${WHITE}${cpu} CPU | ${ram}MB RAM | ${disk}GB Disk | $os${NC}"
-        ((i++))
-    done < "$VM_LIST"
-    return 0
-}
-
-# Create container (for cloud/any environment)
-create_container() {
-    clear
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}                    CREATE NEW CONTAINER${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    CPU_CORES=$(nproc)
+    CPU_MODEL=$(lscpu | grep "Model name" | cut -d':' -f2 | xargs || echo "Unknown")
+    echo -e "${WHITE}├─ CPU Cores      :${NC} ${GREEN}$CPU_CORES${NC}"
+    echo -e "${WHITE}├─ CPU Model      :${NC} ${GREEN}$CPU_MODEL${NC}"
+    
+    RAM_TOTAL=$(free -h | awk '/^Mem:/ {print $2}')
+    echo -e "${WHITE}├─ Total RAM      :${NC} ${GREEN}$RAM_TOTAL${NC}"
+    
+    DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
+    DISK_FREE=$(df -h / | awk 'NR==2 {print $4}')
+    echo -e "${WHITE}├─ Total Disk     :${NC} ${GREEN}$DISK_TOTAL${NC}"
+    echo -e "${WHITE}├─ Free Disk      :${NC} ${GREEN}$DISK_FREE${NC}"
+    
+    echo -e "${WHITE}├─ OS             :${NC} ${GREEN}$OS $VER${NC}"
+    
+    IP_PUBLIC=$(curl -s --max-time 5 ifconfig.me || echo "Not available")
+    echo -e "${WHITE}└─ Public IP      :${NC} ${GREEN}$IP_PUBLIC${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    
-    # Get name
-    echo -ne "${WHITE}Container name: ${NC}"
-    read name
-    [[ -z "$name" ]] && error "Name required"
-    
-    # CPU
-    echo -ne "${WHITE}CPU cores (1-$(nproc)): ${NC}"
-    read cpu
-    [[ ! "$cpu" =~ ^[0-9]+$ ]] && cpu=1
-    
-    # RAM
-    echo -ne "${WHITE}RAM in MB (512, 1024, 2048): ${NC}"
-    read ram
-    [[ ! "$ram" =~ ^[0-9]+$ ]] && ram=512
-    
-    # Disk
-    echo -ne "${WHITE}Disk size in GB (10, 20, 50): ${NC}"
-    read disk
-    [[ ! "$disk" =~ ^[0-9]+$ ]] && disk=10
-    
-    # OS
-    echo -e "${CYAN}Select OS:${NC}"
-    echo "  1) Ubuntu 22.04"
-    echo "  2) Ubuntu 20.04"
-    echo "  3) Debian 12"
-    echo "  4) Alpine Linux"
-    echo -ne "${WHITE}Choice: ${NC}"
-    read os_choice
-    
-    case $os_choice in
-        1) os="Ubuntu 22.04"; image="ubuntu:22.04";;
-        2) os="Ubuntu 20.04"; image="ubuntu:20.04";;
-        3) os="Debian 12"; image="debian:bookworm";;
-        4) os="Alpine Linux"; image="alpine:latest";;
-        *) os="Ubuntu 22.04"; image="ubuntu:22.04";;
-    esac
-    
-    # Ports
-    echo -ne "${WHITE}Ports to open (e.g., 22,80,443): ${NC}"
-    read ports
-    
-    # Install Docker if needed
-    if ! command -v docker &> /dev/null; then
-        echo -e "${YELLOW}Installing Docker...${NC}"
-        curl -fsSL https://get.docker.com | sh
-        systemctl start docker
-        systemctl enable docker
-    fi
-    
-    # Create container
-    echo -e "${YELLOW}Creating container...${NC}"
-    docker pull "$image"
-    
-    # Build command
-    cmd="docker run -d --name $name --cpus $cpu --memory ${ram}M"
-    
-    # Add ports
-    if [[ -n "$ports" ]]; then
-        IFS=',' read -ra PORTS <<< "$ports"
-        for port in "${PORTS[@]}"; do
-            cmd="$cmd -p $port:$port"
-        done
-    fi
-    
-    cmd="$cmd $image sleep infinity"
-    eval "$cmd"
-    
-    # Save to list
-    echo "$name|$cpu|$ram|$disk|$os|$ports" >> "$VM_LIST"
-    
-    success "Container '$name' created!"
-    echo ""
-    echo -e "${GREEN}Container info:${NC}"
-    echo -e "  Enter: docker exec -it $name /bin/bash"
-    echo -e "  Stop:  docker stop $name"
-    echo -e "  Start: docker start $name"
-    echo -e "  Remove: docker rm -f $name"
 }
 
-# Start container
-start_container() {
-    list_vms || return
-    echo -ne "${WHITE}Enter number to start: ${NC}"
-    read num
-    
-    local i=1
-    while IFS='|' read -r name cpu ram disk os ports; do
-        if [[ $i -eq $num ]]; then
-            docker start "$name"
-            success "Container '$name' started"
-            return
-        fi
-        ((i++))
-    done < "$VM_LIST"
-    error "Invalid number"
+# Update system
+update_system() {
+    log "Updating system packages..."
+    apt-get update -y >> "$LOG_FILE" 2>&1
+    apt-get upgrade -y >> "$LOG_FILE" 2>&1
+    success "System updated"
 }
 
-# Stop container
-stop_container() {
-    list_vms || return
-    echo -ne "${WHITE}Enter number to stop: ${NC}"
-    read num
+# Install dependencies
+install_dependencies() {
+    log "Installing dependencies..."
+    apt-get install -y curl wget git nginx mysql-server redis-server \
+        tar unzip zip gzip ca-certificates gnupg lsb-release \
+        software-properties-common >> "$LOG_FILE" 2>&1
     
-    local i=1
-    while IFS='|' read -r name cpu ram disk os ports; do
-        if [[ $i -eq $num ]]; then
-            docker stop "$name"
-            success "Container '$name' stopped"
-            return
-        fi
-        ((i++))
-    done < "$VM_LIST"
-    error "Invalid number"
+    # Install PHP 8.2
+    apt-get install -y php8.2 php8.2-cli php8.2-common php8.2-curl \
+        php8.2-gd php8.2-mysql php8.2-mbstring php8.2-bcmath php8.2-xml \
+        php8.2-fpm php8.2-zip php8.2-redis >> "$LOG_FILE" 2>&1
+    
+    # Install Docker
+    curl -fsSL https://get.docker.com | sh >> "$LOG_FILE" 2>&1
+    systemctl enable docker
+    systemctl start docker
+    
+    success "Dependencies installed"
 }
 
-# Delete container
-delete_container() {
-    list_vms || return
-    echo -ne "${RED}Enter number to delete: ${NC}"
-    read num
+# Setup MySQL
+setup_mysql() {
+    log "Setting up MySQL database..."
     
-    local i=1
-    while IFS='|' read -r name cpu ram disk os ports; do
-        if [[ $i -eq $num ]]; then
-            echo -ne "${RED}Delete '$name'? (y/n): ${NC}"
-            read confirm
-            if [[ "$confirm" == "y" ]]; then
-                docker stop "$name" 2>/dev/null
-                docker rm "$name" 2>/dev/null
-                sed -i "/^$name|/d" "$VM_LIST"
-                success "Container deleted"
-            fi
-            return
-        fi
-        ((i++))
-    done < "$VM_LIST"
-    error "Invalid number"
+    # Generate random passwords
+    MYSQL_ROOT_PASS=$(openssl rand -base64 16)
+    MYSQL_PTERO_PASS=$(openssl rand -base64 16)
+    
+    # Secure MySQL installation
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASS}';" 2>/dev/null || true
+    mysql -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
+    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
+    mysql -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
+    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
+    mysql -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+    
+    # Create Pterodactyl database
+    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "CREATE DATABASE IF NOT EXISTS panel;" 2>/dev/null || true
+    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "CREATE USER IF NOT EXISTS 'pterodactyl'@'127.0.0.1' IDENTIFIED BY '${MYSQL_PTERO_PASS}';" 2>/dev/null || true
+    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "GRANT ALL PRIVILEGES ON panel.* TO 'pterodactyl'@'127.0.0.1' WITH GRANT OPTION;" 2>/dev/null || true
+    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+    
+    # Save credentials
+    cat > /root/pterodactyl_db_credentials.txt << EOF
+====================================
+PTERODACTYL DATABASE CREDENTIALS
+====================================
+MySQL Root Password: $MYSQL_ROOT_PASS
+Pterodactyl Database User: pterodactyl
+Pterodactyl Database Password: $MYSQL_PTERO_PASS
+Database Name: panel
+====================================
+EOF
+    
+    success "MySQL configured"
+    echo -e "  ${YELLOW}Credentials saved to: /root/pterodactyl_db_credentials.txt${NC}"
 }
 
-# Show container info
-show_container_info() {
-    list_vms || return
-    echo -ne "${WHITE}Enter number: ${NC}"
-    read num
+# Install Pterodactyl Panel
+install_pterodactyl_panel() {
+    log "Installing Pterodactyl Panel..."
     
-    local i=1
-    while IFS='|' read -r name cpu ram disk os ports; do
-        if [[ $i -eq $num ]]; then
-            clear
-            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo -e "${GREEN}Container: $name${NC}"
-            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            
-            status=$(docker ps -a --filter "name=$name" --format "{{.Status}}")
-            ip=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$name" 2>/dev/null)
-            
-            echo -e "${CYAN}Status:${NC} $status"
-            echo -e "${CYAN}CPU:${NC} $cpu cores"
-            echo -e "${CYAN}RAM:${NC} $ram MB"
-            echo -e "${CYAN}Disk:${NC} $disk GB"
-            echo -e "${CYAN}OS:${NC} $os"
-            echo -e "${CYAN}IP:${NC} $ip"
-            echo -e "${CYAN}Ports:${NC} $ports"
-            echo ""
-            echo -e "${GREEN}Commands:${NC}"
-            echo -e "  Enter: docker exec -it $name /bin/bash"
-            echo -e "  Logs:  docker logs $name"
-            return
-        fi
-        ((i++))
-    done < "$VM_LIST"
-    error "Invalid number"
+    cd /var/www
+    
+    # Download panel
+    curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz >> "$LOG_FILE" 2>&1
+    tar -xzvf panel.tar.gz >> "$LOG_FILE" 2>&1
+    rm panel.tar.gz
+    mv panel-* pterodactyl
+    cd pterodactyl
+    
+    # Set permissions
+    chmod -R 755 storage/* bootstrap/cache
+    
+    # Install Composer
+    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer >> "$LOG_FILE" 2>&1
+    
+    # Install dependencies
+    cp .env.example .env
+    composer install --no-dev --optimize-autoloader >> "$LOG_FILE" 2>&1
+    
+    # Generate key
+    php artisan key:generate --force >> "$LOG_FILE" 2>&1
+    
+    # Configure environment
+    php artisan p:environment:setup --author=admin@localhost --url=http://localhost --timezone=UTC --cache=redis --session=redis --queue=redis --redis-host=127.0.0.1 --redis-pass= --redis-port=6379 --no-interaction >> "$LOG_FILE" 2>&1 || true
+    
+    php artisan p:environment:database --host=127.0.0.1 --port=3306 --database=panel --username=pterodactyl --password="${MYSQL_PTERO_PASS}" --no-interaction >> "$LOG_FILE" 2>&1 || true
+    
+    # Run migrations
+    php artisan migrate --seed --force >> "$LOG_FILE" 2>&1
+    
+    # Create admin user
+    php artisan p:user:make --email=admin@localhost --username=admin --name-first=Admin --name-last=User --password=password123 --admin=1 --no-interaction >> "$LOG_FILE" 2>&1 || true
+    
+    # Set permissions
+    chown -R www-data:www-data /var/www/pterodactyl/*
+    
+    # Setup queue worker
+    cat > /etc/systemd/system/pteroq.service << 'EOF'
+[Unit]
+Description=Pterodactyl Queue Worker
+After=redis-server.service
+
+[Service]
+User=www-data
+Group=www-data
+Restart=always
+ExecStart=/usr/bin/php /var/www/pterodactyl/artisan queue:work --queue=high,standard,low --sleep=3 --tries=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl enable --now pteroq.service >> "$LOG_FILE" 2>&1
+    
+    # Setup cron job
+    (crontab -l 2>/dev/null; echo "* * * * * php /var/www/pterodactyl/artisan schedule:run >> /dev/null 2>&1") | crontab -
+    
+    success "Pterodactyl Panel installed"
+}
+
+# Configure Nginx
+configure_nginx() {
+    log "Configuring Nginx..."
+    
+    cat > /etc/nginx/sites-available/pterodactyl.conf << 'EOF'
+server {
+    listen 80;
+    server_name _;
+    root /var/www/pterodactyl/public;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOF
+    
+    ln -sf /etc/nginx/sites-available/pterodactyl.conf /etc/nginx/sites-enabled/
+    rm -f /etc/nginx/sites-enabled/default
+    systemctl restart nginx
+    systemctl restart php8.2-fpm
+    
+    success "Nginx configured"
+}
+
+# Install Pterodactyl Wings
+install_pterodactyl_wings() {
+    log "Installing Pterodactyl Wings..."
+    
+    # Create wings user
+    useradd -r -d /var/lib/pterodactyl -m -s /bin/bash wings 2>/dev/null || true
+    
+    # Create directories
+    mkdir -p /etc/pterodactyl /var/lib/pterodactyl/{tmp,archive,backups}
+    
+    # Download wings
+    curl -L -o /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64 >> "$LOG_FILE" 2>&1
+    chmod u+x /usr/local/bin/wings
+    
+    # Create systemd service
+    cat > /etc/systemd/system/wings.service << 'EOF'
+[Unit]
+Description=Pterodactyl Wings Daemon
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+User=root
+WorkingDirectory=/etc/pterodactyl
+LimitNOFILE=4096
+PIDFile=/var/run/wings/daemon.pid
+ExecStart=/usr/local/bin/wings
+Restart=on-failure
+StartLimitInterval=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    mkdir -p /var/run/wings
+    chown -R wings:wings /var/run/wings
+    
+    success "Pterodactyl Wings installed"
+    echo -e "\n  ${YELLOW}Wings Setup Required:${NC}"
+    echo -e "  ${WHITE}├─ After panel installation, get node configuration from panel${NC}"
+    echo -e "  ${WHITE}├─ Save config to: /etc/pterodactyl/config.yml${NC}"
+    echo -e "  ${WHITE}└─ Then start wings: systemctl start wings${NC}"
 }
 
 # Install Node.js
 install_node() {
     log "Installing Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-    apt-get install -y nodejs
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - >> "$LOG_FILE" 2>&1
+    apt-get install -y nodejs >> "$LOG_FILE" 2>&1
     success "Node.js installed: $(node -v)"
 }
 
 # Install Tailscale
 install_tailscale() {
     log "Installing Tailscale..."
-    curl -fsSL https://tailscale.com/install.sh | sh
+    curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG_FILE" 2>&1
     success "Tailscale installed"
     
-    echo -ne "Start Tailscale now? (y/n): "
+    echo -e "\n  ${YELLOW}Tailscale Setup${NC}"
+    echo -ne "  ${WHITE}├─ Start Tailscale? (y/n): ${NC}"
     read start_ts
     if [[ "$start_ts" == "y" ]]; then
-        tailscale up
+        echo -ne "  ${WHITE}├─ Auth key (optional): ${NC}"
+        read ts_key
+        if [[ -n "$ts_key" ]]; then
+            tailscale up --auth-key "$ts_key" >> "$LOG_FILE" 2>&1
+        else
+            tailscale up >> "$LOG_FILE" 2>&1
+        fi
+        success "Tailscale started"
+        tailscale status
     fi
 }
 
 # Install Cloudflared
 install_cloudflared() {
     log "Installing Cloudflared..."
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflared.list
-    apt-get update
-    apt-get install -y cloudflared
-    success "Cloudflared installed"
     
-    echo -e "${YELLOW}To setup tunnel: cloudflared tunnel login${NC}"
-}
+    # Add cloudflared repo
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >> "$LOG_FILE" 2>&1
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflared.list >> "$LOG_FILE" 2>&1
+    
+    apt-get update -y >> "$LOG_FILE" 2>&1
+    apt-get install -y cloudflared >> "$LOG_FILE" 2>&1
+    
+    success "Cloudflared installed: $(cloudflared version)"
+    
+    echo -e "\n  ${YELLOW}Cloudflare Tunnel Setup${NC}"
+    echo -e "  ${WHITE}├─ You need to authenticate with Cloudflare${NC}"
+    echo -ne "  ${WHITE}├─ Press Enter to start authentication...${NC}"
+    read
+    
+    cloudflared tunnel login
+    
+    echo -ne "  ${WHITE}├─ Enter tunnel name: ${NC}"
+    read tunnel_name
+    
+    cloudflared tunnel create "$tunnel_name"
+    
+    echo -ne "  ${WHITE}├─ Enter hostname (e.g., panel.example.com): ${NC}"
+    read hostname
+    
+    cloudflared tunnel route dns "$tunnel_name" "$hostname"
+    
+    mkdir -p /root/.cloudflared
+    cat > /root/.cloudflared/config.yml << EOF
+tunnel: $tunnel_name
+credentials-file: /root/.cloudflared/${tunnel_name}.json
 
-# Install monitoring
-install_monitoring() {
-    log "Installing monitoring tools..."
-    apt-get install -y htop nmon iotop iftop
-    success "Monitoring tools installed"
+ingress:
+  - hostname: $hostname
+    service: http://localhost:80
+  - service: http_status:404
+EOF
+    
+    echo -e "\n  ${GREEN}✓ Cloudflare tunnel configured!${NC}"
+    echo -e "  ${WHITE}├─ Run: cloudflared tunnel run $tunnel_name${NC}"
+    echo -e "  ${WHITE}└─ Or install as service: cloudflared service install${NC}"
 }
 
 # Install RDP
 install_rdp() {
-    log "Installing RDP..."
-    apt-get install -y x2goserver x2goserver-xsession xfce4
+    log "Installing RDP (X2Go)..."
+    
+    apt-get install -y x2goserver x2goserver-xsession xfce4 xfce4-goodies >> "$LOG_FILE" 2>&1
+    
     success "RDP installed"
+    echo -e "\n  ${YELLOW}RDP Information${NC}"
+    echo -e "  ${WHITE}├─ Desktop: XFCE4${NC}"
+    echo -e "  ${WHITE}├─ Port: 22 (SSH)${NC}"
+    echo -e "  ${WHITE}└─ Connect using X2Go client with SSH protocol${NC}"
 }
 
-# Pterodactyl installer (simplified)
-install_pterodactyl() {
-    log "Installing Pterodactyl dependencies..."
-    apt-get update
-    apt-get install -y curl wget git nginx mysql-server redis-server php8.1 php8.1-{cli,common,curl,gd,mysql,mbstring,bcmath,xml,fpm,zip,redis}
+# Install Norfurch (Monitoring)
+install_norfurch() {
+    log "Installing Norfurch (Monitoring Tools)..."
     
-    # Install Docker
-    curl -fsSL https://get.docker.com | sh
-    systemctl enable docker
-    systemctl start docker
+    apt-get install -y htop nmon iotop iftop >> "$LOG_FILE" 2>&1
     
-    # Install Composer
-    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    # Install netdata
+    curl -fsSL https://my-netdata.io/kickstart.sh | sh >> "$LOG_FILE" 2>&1
     
-    # Download Panel
-    cd /var/www
-    curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz
-    tar -xzvf panel.tar.gz
-    chmod -R 755 pterodactyl/storage pterodactyl/bootstrap/cache
-    
-    cd pterodactyl
-    cp .env.example .env
-    composer install --no-dev --optimize-autoloader
-    php artisan key:generate --force
-    
-    success "Pterodactyl panel downloaded. Complete setup at: http://$(curl -s ifconfig.me)"
+    success "Norfurch monitoring tools installed"
+    echo -e "\n  ${YELLOW}Monitoring Tools Available:${NC}"
+    echo -e "  ${WHITE}├─ htop    : Interactive process viewer${NC}"
+    echo -e "  ${WHITE}├─ nmon    : System performance monitor${NC}"
+    echo -e "  ${WHITE}├─ iotop   : I/O monitoring${NC}"
+    echo -e "  ${WHITE}├─ iftop   : Network bandwidth monitor${NC}"
+    echo -e "  ${WHITE}└─ netdata : Web-based monitoring at http://localhost:19999${NC}"
 }
 
 # Main menu
 main_menu() {
     while true; do
+        show_header
         show_info
         
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${GREEN}MAIN MENU${NC}"
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}                    PTERODACTYL INSTALLATION${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "  ${GREEN}1)${NC} Install Everything (Full Pterodactyl Suite)"
+        echo -e "  ${GREEN}2)${NC} Install Pterodactyl Panel Only"
+        echo -e "  ${GREEN}3)${NC} Install Pterodactyl Wings Only"
         echo ""
-        echo "  1) 📦 Manage Containers (Create/Start/Stop)"
-        echo "  2) 🐧 Install Pterodactyl Panel"
-        echo "  3) 📦 Install Node.js"
-        echo "  4) 🔒 Install Tailscale VPN"
-        echo "  5) ☁️  Install Cloudflared"
-        echo "  6) 📊 Install Monitoring Tools"
-        echo "  7) 🖥️  Install RDP"
-        echo "  8) ℹ️  Show System Info"
-        echo "  0) ❌ Exit"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}                    ADDITIONAL TOOLS${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "  ${GREEN}4)${NC} Install Node.js"
+        echo -e "  ${GREEN}5)${NC} Install Tailscale VPN"
+        echo -e "  ${GREEN}6)${NC} Install Cloudflared (with token setup)"
+        echo -e "  ${GREEN}7)${NC} Install RDP (Remote Desktop)"
+        echo -e "  ${GREEN}8)${NC} Install Norfurch (Monitoring Tools)"
         echo ""
-        echo -ne "${WHITE}Enter choice: ${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "  ${RED}0)${NC} Exit"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -ne "${WHITE}Enter your choice [0-8]: ${NC}"
         read choice
         
         case $choice in
-            1) 
-                while true; do
-                    clear
-                    show_info
-                    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-                    echo -e "${GREEN}CONTAINER MANAGEMENT${NC}"
-                    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-                    echo ""
-                    list_vms
-                    echo ""
-                    echo "  1) Create new container"
-                    echo "  2) Start container"
-                    echo "  3) Stop container"
-                    echo "  4) Show container info"
-                    echo "  5) Delete container"
-                    echo "  6) Back to main menu"
-                    echo ""
-                    echo -ne "${WHITE}Choice: ${NC}"
-                    read subchoice
-                    
-                    case $subchoice in
-                        1) create_container ;;
-                        2) start_container ;;
-                        3) stop_container ;;
-                        4) show_container_info ;;
-                        5) delete_container ;;
-                        6) break ;;
-                        *) echo -e "${RED}Invalid${NC}"; sleep 1 ;;
-                    esac
-                    
-                    echo ""
-                    echo -ne "${WHITE}Press Enter...${NC}"
-                    read
-                done
+            1)
+                update_system
+                install_dependencies
+                setup_mysql
+                install_pterodactyl_panel
+                configure_nginx
+                install_pterodactyl_wings
+                echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${GREEN}✓ Full Pterodactyl installation completed!${NC}"
+                echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${YELLOW}Panel Access: http://$(curl -s ifconfig.me)${NC}"
+                echo -e "${YELLOW}Admin Login: admin@localhost / password123${NC}"
+                echo -e "${YELLOW}DB Credentials: /root/pterodactyl_db_credentials.txt${NC}"
+                echo -e "${YELLOW}Wings Config: /etc/pterodactyl/config.yml${NC}"
                 ;;
-            2) 
-                install_pterodactyl
-                echo -ne "${WHITE}Press Enter...${NC}"
-                read
+            2)
+                update_system
+                install_dependencies
+                setup_mysql
+                install_pterodactyl_panel
+                configure_nginx
+                echo -e "\n${GREEN}✓ Pterodactyl Panel installed!${NC}"
+                echo -e "${YELLOW}Access at: http://$(curl -s ifconfig.me)${NC}"
+                echo -e "${YELLOW}Admin Login: admin@localhost / password123${NC}"
                 ;;
-            3) 
+            3)
+                update_system
+                install_dependencies
+                install_pterodactyl_wings
+                ;;
+            4)
+                update_system
                 install_node
-                echo -ne "${WHITE}Press Enter...${NC}"
-                read
                 ;;
-            4) 
+            5)
+                update_system
                 install_tailscale
-                echo -ne "${WHITE}Press Enter...${NC}"
-                read
                 ;;
-            5) 
+            6)
+                update_system
                 install_cloudflared
-                echo -ne "${WHITE}Press Enter...${NC}"
-                read
                 ;;
-            6) 
-                install_monitoring
-                echo -ne "${WHITE}Press Enter...${NC}"
-                read
-                ;;
-            7) 
+            7)
+                update_system
                 install_rdp
-                echo -ne "${WHITE}Press Enter...${NC}"
-                read
                 ;;
-            8) 
-                show_info
-                echo -ne "${WHITE}Press Enter...${NC}"
-                read
+            8)
+                update_system
+                install_norfurch
                 ;;
-            0) 
+            0)
                 echo -e "${GREEN}Goodbye!${NC}"
                 exit 0
                 ;;
-            *) 
+            *)
                 echo -e "${RED}Invalid option${NC}"
-                sleep 1
+                sleep 2
                 ;;
         esac
+        
+        if [[ $choice -ge 1 && $choice -le 8 ]]; then
+            echo ""
+            echo -ne "${WHITE}Press Enter to continue...${NC}"
+            read
+        fi
     done
 }
 
 # Start
 check_root
+detect_os
 main_menu
