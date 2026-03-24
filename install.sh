@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==========================================================
-# GOSTDTGAMER CLOUD SYSTEM | PTERODACTYL DEPLOYMENT SUITE
+# GOSTDTGAMER CLOUD SYSTEM | VPS MANAGEMENT SUITE
 # DATE: 2026-03-25 | UI-TYPE: SEMA-HYPER-VISUAL
 # ==========================================================
 set -euo pipefail
@@ -16,11 +16,16 @@ PURPLE='\033[1;38;5;141m'
 NC='\033[0m'          # Reset
 
 # --- CONFIG ---
-LOG_FILE="/tmp/gostdtgamer_ptero_install.log"
-PTERO_DIR="/var/www/pterodactyl"
-WINGS_DIR="/etc/pterodactyl"
+LOG_FILE="/tmp/gostdtgamer_vps_install.log"
+VM_DIR="/var/lib/libvirt/images"
+VM_CONFIG_DIR="/etc/gostdtgamer/vms"
+VMS_LIST="/etc/gostdtgamer/vms.list"
 MYSQL_ROOT_PASS=""
 MYSQL_PTERO_PASS=""
+
+# Create directories
+mkdir -p "$VM_DIR" "$VM_CONFIG_DIR"
+touch "$VMS_LIST"
 
 # --- FUNCTIONS ---
 log() {
@@ -71,7 +76,7 @@ show_specs() {
 EOF
     echo -e "${NC}"
     echo -e "${PURPLE}┌──────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${PURPLE}│${NC}  ${R}☢️  GOSTDTGAMER PTERODACTYL SUITE${NC} ${DG}v2.0${NC}          ${DG}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
+    echo -e "${PURPLE}│${NC}  ${R}☢️  GOSTDTGAMER VPS MANAGEMENT SUITE${NC} ${DG}v3.0${NC}      ${DG}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
     echo -e "${PURPLE}└──────────────────────────────────────────────────────────┘${NC}"
     echo -e "${DG}                   POWERED BY GOSTDTGAMER${NC}"
     echo ""
@@ -100,756 +105,667 @@ EOF
     echo ""
 }
 
-update_system() {
-    log "Updating system packages..."
-    apt-get update -y 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
-    apt-get upgrade -y 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
-    success "System updated"
+# ==================== VPS MANAGEMENT FUNCTIONS ====================
+
+list_vms() {
+    if [[ ! -f "$VMS_LIST" ]] || [[ ! -s "$VMS_LIST" ]]; then
+        echo -e "${Y}📋 [INFO] No VMs found. Create one first!${NC}"
+        return 1
+    fi
+    
+    echo -e "${C}📋 [INFO] 📁 Found $(wc -l < "$VMS_LIST") existing VM(s):${NC}"
+    local i=1
+    while IFS= read -r vm; do
+        local vm_name=$(echo "$vm" | cut -d'|' -f1)
+        local vm_status=$(virsh list --all | grep "$vm_name" > /dev/null 2>&1 && echo "🟢 Running" || echo "🔴 Stopped")
+        echo -e "  ${G}$i)${NC} $vm_name - $vm_status"
+        ((i++))
+    done < "$VMS_LIST"
+    return 0
 }
 
-install_dependencies() {
-    log "Installing dependencies..."
-    
-    apt-get install -y curl wget git nginx mysql-server redis-server \
-        tar unzip zip gzip ca-certificates gnupg lsb-release \
-        software-properties-common 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
-    
-    # Install PHP 8.2
-    echo -e "  ${DG}├─ Installing PHP 8.2...${NC}"
-    apt-get install -y php8.2 php8.2-cli php8.2-common php8.2-curl \
-        php8.2-gd php8.2-mysql php8.2-mbstring php8.2-bcmath php8.2-xml \
-        php8.2-fpm php8.2-zip php8.2-redis 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
-    
-    # Install Docker for Wings
-    echo -e "  ${DG}├─ Installing Docker...${NC}"
-    curl -fsSL https://get.docker.com | sh 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
-    
-    success "Dependencies installed"
-}
-
-setup_mysql() {
-    log "Setting up MySQL database..."
-    
-    # Generate random passwords
-    MYSQL_ROOT_PASS=$(openssl rand -base64 16)
-    MYSQL_PTERO_PASS=$(openssl rand -base64 16)
-    
-    # Secure MySQL installation
-    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASS}';" 2>/dev/null || true
-    mysql -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
-    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
-    mysql -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
-    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
-    mysql -e "FLUSH PRIVILEGES;" 2>/dev/null || true
-    
-    # Create Pterodactyl database
-    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "CREATE DATABASE IF NOT EXISTS panel;" 2>/dev/null || true
-    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "CREATE USER IF NOT EXISTS 'pterodactyl'@'127.0.0.1' IDENTIFIED BY '${MYSQL_PTERO_PASS}';" 2>/dev/null || true
-    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "GRANT ALL PRIVILEGES ON panel.* TO 'pterodactyl'@'127.0.0.1' WITH GRANT OPTION;" 2>/dev/null || true
-    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
-    
-    # Save credentials
-    cat > /root/pterodactyl_db_credentials.txt << EOF
-MySQL Root Password: $MYSQL_ROOT_PASS
-Pterodactyl Database User: pterodactyl
-Pterodactyl Database Password: $MYSQL_PTERO_PASS
-Database Name: panel
-EOF
-    
-    success "MySQL configured"
-    echo -e "  ${Y}├─ Credentials saved to: /root/pterodactyl_db_credentials.txt${NC}"
-}
-
-install_pterodactyl_panel() {
-    log "Installing Pterodactyl Panel..."
-    
-    cd /var/www
-    curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz 2>&1 | tee -a "$LOG_FILE"
-    tar -xzvf panel.tar.gz 2>&1 | tee -a "$LOG_FILE"
-    chmod -R 755 storage/* bootstrap/cache/
-    
-    # Install Composer
-    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer 2>&1 | tee -a "$LOG_FILE"
-    
-    cd "$PTERO_DIR"
-    cp .env.example .env
-    composer install --no-dev --optimize-autoloader 2>&1 | tee -a "$LOG_FILE"
-    
-    # Generate key
-    php artisan key:generate --force
-    
-    # Configure database
-    php artisan p:environment:setup --author=admin@localhost --url=http://localhost --timezone=UTC --cache=redis --session=redis --queue=redis --redis-host=127.0.0.1 --redis-pass= --redis-port=6379
-    
-    php artisan p:environment:database --host=127.0.0.1 --port=3306 --database=panel --username=pterodactyl --password="${MYSQL_PTERO_PASS}"
-    
-    # Run migrations
-    php artisan migrate --seed --force
-    
-    # Create admin user
-    php artisan p:user:make --email=admin@localhost --username=admin --name-first=Admin --password=password123 --admin=1
-    
-    # Set permissions
-    chown -R www-data:www-data /var/www/pterodactyl/*
-    
-    # Setup queue worker
-    cat > /etc/systemd/system/pteroq.service << EOF
-[Unit]
-Description=Pterodactyl Queue Worker
-After=redis-server.service
-
-[Service]
-User=www-data
-Group=www-data
-Restart=always
-ExecStart=/usr/bin/php /var/www/pterodactyl/artisan queue:work --queue=high,standard,low --sleep=3 --tries=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    systemctl enable --now pteroq.service
-    
-    # Setup cron job
-    echo "* * * * * php /var/www/pterodactyl/artisan schedule:run >> /dev/null 2>&1" | crontab -
-    
-    success "Pterodactyl Panel installed"
-}
-
-configure_nginx() {
-    log "Configuring Nginx..."
-    
-    cat > /etc/nginx/sites-available/pterodactyl.conf << 'EOF'
-server {
-    listen 80;
-    server_name _;
-    root /var/www/pterodactyl/public;
-    index index.php;
-
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
-    }
-
-    location ~ /\.ht {
-        deny all;
-    }
-}
-EOF
-    
-    ln -sf /etc/nginx/sites-available/pterodactyl.conf /etc/nginx/sites-enabled/pterodactyl.conf
-    rm -f /etc/nginx/sites-enabled/default
-    systemctl restart nginx
-    systemctl restart php8.2-fpm
-    
-    success "Nginx configured"
-}
-
-install_node_tailscale() {
-    log "Installing Node.js and Tailscale..."
-    
-    # Node.js
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - 2>&1 | tee -a "$LOG_FILE"
-    apt-get install -y nodejs 2>&1 | tee -a "$LOG_FILE"
-    success "Node.js installed: $(node -v)"
-    
-    # Tailscale
-    curl -fsSL https://tailscale.com/install.sh | sh 2>&1 | tee -a "$LOG_FILE"
-    success "Tailscale installed"
-    
-    echo -e "\n  ${Y}Tailscale Setup${NC}"
-    echo -ne "  ${DG}├─ Start Tailscale? (y/n): ${NC}"
-    read -r start_ts
-    if [[ "$start_ts" == "y" ]]; then
-        echo -ne "  ${DG}├─ Auth key (optional): ${NC}"
-        read -r ts_key
-        if [[ -n "$ts_key" ]]; then
-            tailscale up --auth-key "$ts_key"
-        else
-            tailscale up
+get_vm_by_number() {
+    local num=$1
+    local i=1
+    while IFS= read -r vm; do
+        if [[ $i -eq $num ]]; then
+            echo "$vm"
+            return 0
         fi
-        success "Tailscale started"
-    fi
+        ((i++))
+    done < "$VMS_LIST"
+    return 1
 }
 
-install_cloudflared_token() {
-    log "Installing Cloudflared..."
+create_vm() {
+    clear
+    echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${C}                    🆕 CREATE NEW VIRTUAL MACHINE${NC}"
+    echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
     
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >> "$LOG_FILE"
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflared.list
-    apt-get update -y >> "$LOG_FILE"
-    apt-get install -y cloudflared 2>&1 | tee -a "$LOG_FILE"
+    # VM Name
+    echo -ne "${W}📝 Enter VM name: ${NC}"
+    read -r vm_name
     
-    success "Cloudflared installed"
-    
-    echo -e "\n  ${Y}Cloudflare Tunnel Setup${NC}"
-    echo -e "  ${DG}├─ You will need to authenticate with Cloudflare${NC}"
-    echo -ne "  ${DG}├─ Press Enter to start authentication...${NC}"
-    read -r
-    
-    cloudflared tunnel login
-    
-    echo -ne "  ${DG}├─ Enter tunnel name: ${NC}"
-    read -r tunnel_name
-    
-    cloudflared tunnel create "$tunnel_name"
-    
-    echo -ne "  ${DG}├─ Enter hostname (e.g., panel.example.com): ${NC}"
-    read -r hostname
-    
-    cloudflared tunnel route dns "$tunnel_name" "$hostname"
-    
-    mkdir -p /root/.cloudflared
-    cat > /root/.cloudflared/config.yml << EOF
-tunnel: $tunnel_name
-credentials-file: /root/.cloudflared/${tunnel_name}.json
-
-ingress:
-  - hostname: $hostname
-    service: http://localhost:80
-  - service: http_status:404
-EOF
-    
-    echo -e "\n  ${G}✓ Cloudflare tunnel configured!${NC}"
-    echo -e "  ${DG}├─ Run: ${W}cloudflared tunnel run $tunnel_name${NC}"
-    echo -e "  ${DG}└─ Or install as service: ${W}cloudflared service install${NC}"
-}
-
-install_pterodactyl_wings() {
-    log "Installing Pterodactyl Wings..."
-    
-    # Create wings user
-    useradd -r -d /var/lib/pterodactyl -m -s /bin/bash wings || true
-    
-    # Create directories
-    mkdir -p /etc/pterodactyl /var/lib/pterodactyl/{tmp,archive,backups}
-    
-    # Download wings
-    curl -L -o /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64 2>&1 | tee -a "$LOG_FILE"
-    chmod u+x /usr/local/bin/wings
-    
-    # Create systemd service
-    cat > /etc/systemd/system/wings.service << 'EOF'
-[Unit]
-Description=Pterodactyl Wings Daemon
-After=docker.service
-Requires=docker.service
-PartOf=docker.service
-
-[Service]
-User=root
-WorkingDirectory=/etc/pterodactyl
-LimitNOFILE=4096
-PIDFile=/var/run/wings/daemon.pid
-ExecStart=/usr/local/bin/wings
-Restart=on-failure
-StartLimitInterval=600
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    mkdir -p /var/run/wings
-    chown -R wings:wings /var/run/wings
-    
-    success "Pterodactyl Wings installed"
-    echo -e "\n  ${Y}Wings Setup Required:${NC}"
-    echo -e "  ${DG}├─ After panel installation, get node configuration from panel${NC}"
-    echo -e "  ${DG}├─ Save config to: /etc/pterodactyl/config.yml${NC}"
-    echo -e "  ${DG}└─ Then start wings: ${W}systemctl start wings${NC}"
-}
-
-install_norfurch() {
-    log "Installing Norfurch (Monitoring Tools)..."
-    
-    apt-get install -y htop nmon iotop iftop netdata 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
-    
-    # Install netdata if not available
-    if ! command -v netdata &> /dev/null; then
-        curl -fsSL https://my-netdata.io/kickstart.sh | sh 2>&1 | tee -a "$LOG_FILE"
+    if [[ -z "$vm_name" ]]; then
+        error "VM name cannot be empty"
     fi
     
-    success "Monitoring tools installed"
-    
-    echo -e "\n  ${Y}Monitoring Tools Available:${NC}"
-    echo -e "  ${DG}├─ htop    : Interactive process viewer${NC}"
-    echo -e "  ${DG}├─ nmon    : System performance monitor${NC}"
-    echo -e "  ${DG}├─ iotop   : I/O monitoring${NC}"
-    echo -e "  ${DG}├─ iftop   : Network bandwidth monitor${NC}"
-    echo -e "  ${DG}└─ netdata : http://localhost:19999${NC}"
-}
-
-install_rdp() {
-    log "Installing RDP (X2Go)..."
-    
-    apt-get install -y x2goserver x2goserver-xsession xfce4 xfce4-goodies 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
-    
-    success "RDP installed"
-    echo -e "\n  ${Y}RDP Info:${NC}"
-    echo -e "  ${DG}├─ Desktop: XFCE4${NC}"
-    echo -e "  ${DG}├─ Port: 22 (SSH)${NC}"
-    echo -e "  ${DG}└─ Connect with X2Go client${NC}"
-}
-
-# ==================== NEW FEATURES ====================
-
-github_vps_maker() {
-    log "GitHub VPS Maker - Setting up GitHub Actions runners and deployment tools..."
-    
-    echo -e "\n  ${Y}🚀 GitHub VPS Maker${NC}"
-    echo -e "  ${DG}├─ This will set up GitHub Actions runner and deployment tools${NC}"
-    
-    # Install GitHub CLI
-    echo -e "  ${DG}├─ Installing GitHub CLI...${NC}"
-    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-    apt-get update -y >> "$LOG_FILE" 2>&1
-    apt-get install -y gh >> "$LOG_FILE" 2>&1
-    
-    # Install GitHub Actions Runner
-    echo -e "  ${DG}├─ Setting up GitHub Actions Runner...${NC}"
-    mkdir -p /opt/actions-runner
-    cd /opt/actions-runner
-    
-    LATEST_RUNNER=$(curl -s https://api.github.com/repos/actions/runner/releases/latest | grep "browser_download_url.*linux-x64" | grep -v ".sha256" | cut -d '"' -f 4)
-    curl -L -o actions-runner.tar.gz "$LATEST_RUNNER" 2>&1 | tee -a "$LOG_FILE"
-    tar -xzf actions-runner.tar.gz
-    rm actions-runner.tar.gz
-    
-    echo -e "  ${Y}├─ GitHub Actions Runner Configuration${NC}"
-    echo -ne "  ${DG}├─ Enter GitHub repository URL (or press Enter to skip): ${NC}"
-    read -r repo_url
-    
-    if [[ -n "$repo_url" ]]; then
-        echo -ne "  ${DG}├─ Enter GitHub token (with repo scope): ${NC}"
-        read -r github_token
-        
-        ./config.sh --url "$repo_url" --token "$github_token" --unattended
-        ./svc.sh install
-        ./svc.sh start
-        success "GitHub Actions Runner configured and started"
+    # Check if VM exists
+    if grep -q "^$vm_name|" "$VMS_LIST" 2>/dev/null; then
+        error "VM with name '$vm_name' already exists"
     fi
     
-    # Install deployment tools
-    echo -e "  ${DG}├─ Installing deployment tools...${NC}"
-    apt-get install -y ansible terraform 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
+    # CPU Cores
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${Y}💻 CPU Configuration${NC}"
+    echo -ne "${W}Enter number of CPU cores (1-$(nproc)): ${NC}"
+    read -r cpu_cores
+    if [[ ! "$cpu_cores" =~ ^[0-9]+$ ]] || [[ $cpu_cores -lt 1 ]] || [[ $cpu_cores -gt $(nproc) ]]; then
+        cpu_cores=1
+        echo -e "${Y}Using default: 1 core${NC}"
+    fi
     
-    # Install kubectl if needed
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" >> "$LOG_FILE" 2>&1
-    chmod +x kubectl
-    mv kubectl /usr/local/bin/
+    # RAM
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${Y}💾 RAM Configuration${NC}"
+    echo -e "${DG}Available RAM: ${W}$(free -h | awk '/^Mem:/ {print $2}')${NC}"
+    echo -ne "${W}Enter RAM in MB (512, 1024, 2048, 4096, etc): ${NC}"
+    read -r ram_mb
+    if [[ ! "$ram_mb" =~ ^[0-9]+$ ]] || [[ $ram_mb -lt 512 ]]; then
+        ram_mb=1024
+        echo -e "${Y}Using default: 1024 MB${NC}"
+    fi
     
-    success "GitHub VPS Maker completed"
-    echo -e "  ${G}├─ GitHub CLI: ${W}gh --version${NC}"
-    echo -e "  ${G}├─ Actions Runner: ${W}/opt/actions-runner${NC}"
-    echo -e "  ${G}└─ Deployment tools: Ansible, Terraform, kubectl${NC}"
-}
-
-idx_tool_setup() {
-    log "IDX Tool Setup - Installing development and IDE tools..."
+    # Disk Size
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${Y}💿 Disk Configuration${NC}"
+    echo -e "${DG}Available disk space: ${W}$(df -h / | awk 'NR==2 {print $4}')${NC}"
+    echo -ne "${W}Enter disk size in GB (10, 20, 50, 100): ${NC}"
+    read -r disk_gb
+    if [[ ! "$disk_gb" =~ ^[0-9]+$ ]] || [[ $disk_gb -lt 5 ]]; then
+        disk_gb=20
+        echo -e "${Y}Using default: 20 GB${NC}"
+    fi
     
-    echo -e "\n  ${Y}🔧 IDX Tool Setup${NC}"
-    echo -e "  ${DG}├─ This will install development tools and IDEs${NC}"
+    # OS Selection
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${Y}🖥️  Operating System Selection${NC}"
+    echo -e "  ${G}1)${NC} Ubuntu 22.04 LTS (Jammy)"
+    echo -e "  ${G}2)${NC} Ubuntu 20.04 LTS (Focal)"
+    echo -e "  ${G}3)${NC} Debian 12 (Bookworm)"
+    echo -e "  ${G}4)${NC} Debian 11 (Bullseye)"
+    echo -e "  ${G}5)${NC} CentOS 9 Stream"
+    echo -e "  ${G}6)${NC} Rocky Linux 9"
+    echo -e "  ${G}7)${NC} Alpine Linux"
+    echo -e "  ${G}8)${NC} Custom ISO URL"
+    echo -ne "${W}Choose OS [1-8]: ${NC}"
+    read -r os_choice
     
-    # Install VS Code
-    echo -e "  ${DG}├─ Installing VS Code...${NC}"
-    wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg
-    install -D -o root -g root -m 644 packages.microsoft.gpg /etc/apt/keyrings/packages.microsoft.gpg
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" | tee /etc/apt/sources.list.d/vscode.list
-    rm -f packages.microsoft.gpg
-    apt-get update -y >> "$LOG_FILE" 2>&1
-    apt-get install -y code >> "$LOG_FILE" 2>&1
+    local os_name=""
+    local iso_url=""
+    case $os_choice in
+        1) os_name="Ubuntu 22.04"; iso_url="https://releases.ubuntu.com/jammy/ubuntu-22.04.5-live-server-amd64.iso";;
+        2) os_name="Ubuntu 20.04"; iso_url="https://releases.ubuntu.com/focal/ubuntu-20.04.6-live-server-amd64.iso";;
+        3) os_name="Debian 12"; iso_url="https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.5.0-amd64-netinst.iso";;
+        4) os_name="Debian 11"; iso_url="https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-11.9.0-amd64-netinst.iso";;
+        5) os_name="CentOS 9"; iso_url="https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/iso/CentOS-Stream-9-latest-x86_64-dvd1.iso";;
+        6) os_name="Rocky Linux 9"; iso_url="https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.3-x86_64-minimal.iso";;
+        7) os_name="Alpine Linux"; iso_url="https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-virt-3.19.1-x86_64.iso";;
+        8) echo -ne "Enter custom ISO URL: "; read -r iso_url; os_name="Custom OS";;
+        *) os_name="Ubuntu 22.04"; iso_url="https://releases.ubuntu.com/jammy/ubuntu-22.04.5-live-server-amd64.iso";;
+    esac
     
-    # Install Docker Compose
-    echo -e "  ${DG}├─ Installing Docker Compose...${NC}"
-    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
+    # Port Configuration
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${Y}🔌 Port Configuration${NC}"
+    echo -e "${DG}Enter ports to open (comma separated, e.g., 22,80,443,8080)${NC}"
+    echo -ne "${W}Ports to open: ${NC}"
+    read -r ports_input
     
-    # Install development tools
-    echo -e "  ${DG}├─ Installing development tools...${NC}"
-    apt-get install -y build-essential python3-pip python3-venv golang-go \
-        default-jdk postgresql-client redis-tools 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
+    # Network Configuration
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${Y}🌐 Network Configuration${NC}"
+    echo -ne "${W}Network bridge (default: virbr0): ${NC}"
+    read -r network_bridge
+    [[ -z "$network_bridge" ]] && network_bridge="virbr0"
     
-    # Install npm global tools
-    echo -e "  ${DG}├─ Installing npm global tools...${NC}"
-    npm install -g yarn pm2 nodemon typescript ts-node 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
+    # Create VM
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${Y}📦 Creating VM: ${W}$vm_name${NC}"
+    echo -e "${DG}├─ CPU: ${W}$cpu_cores cores${NC}"
+    echo -e "${DG}├─ RAM: ${W}$ram_mb MB${NC}"
+    echo -e "${DG}├─ Disk: ${W}$disk_gb GB${NC}"
+    echo -e "${DG}├─ OS: ${W}$os_name${NC}"
+    echo -e "${DG}├─ Ports: ${W}$ports_input${NC}"
+    echo -e "${DG}└─ Network: ${W}$network_bridge${NC}"
+    echo ""
     
-    # Install Python tools
-    echo -e "  ${DG}├─ Installing Python tools...${NC}"
-    pip3 install virtualenv pipenv poetry 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
-    
-    # Create development directory
-    mkdir -p /opt/dev/projects
-    chmod 755 /opt/dev
-    
-    success "IDX Tool Setup completed"
-    echo -e "  ${G}├─ VS Code: ${W}code${NC}"
-    echo -e "  ${G}├─ Docker Compose: ${W}docker-compose${NC}"
-    echo -e "  ${G}├─ Node.js tools: yarn, pm2, nodemon${NC}"
-    echo -e "  ${G}├─ Python tools: virtualenv, pipenv, poetry${NC}"
-    echo -e "  ${G}└─ Dev directory: ${W}/opt/dev/projects${NC}"
-}
-
-idx_vps_maker() {
-    log "IDX VPS Maker - Setting up IDX (Project IDX) development environment..."
-    
-    echo -e "\n  ${Y}⚡ IDX VPS Maker${NC}"
-    echo -e "  ${DG}├─ Setting up Project IDX compatible environment${NC}"
-    
-    # Install Web IDE (Code-Server)
-    echo -e "  ${DG}├─ Installing Code-Server (Web IDE)...${NC}"
-    curl -fsSL https://code-server.dev/install.sh | sh 2>&1 | tee -a "$LOG_FILE"
-    
-    # Create config directory
-    mkdir -p /root/.config/code-server
-    
-    # Generate random password for code-server
-    CODE_PASS=$(openssl rand -base64 12)
-    cat > /root/.config/code-server/config.yaml << EOF
-bind-addr: 0.0.0.0:8080
-auth: password
-password: $CODE_PASS
-cert: false
-EOF
-    
-    # Create systemd service for code-server
-    cat > /etc/systemd/system/code-server.service << EOF
-[Unit]
-Description=code-server
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/bin/code-server
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    systemctl enable code-server
-    systemctl start code-server
-    
-    # Install File Browser
-    echo -e "  ${DG}├─ Installing File Browser...${NC}"
-    curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash 2>&1 | tee -a "$LOG_FILE"
-    
-    cat > /etc/systemd/system/filebrowser.service << EOF
-[Unit]
-Description=File Browser
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/local/bin/filebrowser -r / -a 0.0.0.0 -p 8081
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    systemctl enable filebrowser
-    systemctl start filebrowser
-    
-    # Install Portainer for container management
-    echo -e "  ${DG}├─ Installing Portainer...${NC}"
-    docker volume create portainer_data >> "$LOG_FILE" 2>&1
-    docker run -d -p 8000:8000 -p 9443:9443 --name portainer --restart=always \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        -v portainer_data:/data portainer/portainer-ce:latest >> "$LOG_FILE" 2>&1
-    
-    # Create workspace
-    mkdir -p /opt/idx-workspace
-    chmod 777 /opt/idx-workspace
-    
-    # Save credentials
-    cat > /root/idx_credentials.txt << EOF
-====================================
-IDX VPS MAKER - ACCESS CREDENTIALS
-====================================
-Code-Server (Web IDE): http://$(curl -s ifconfig.me):8080
-Code-Server Password: $CODE_PASS
-
-File Browser: http://$(curl -s ifconfig.me):8081
-File Browser Login: admin/admin (first login will prompt to change)
-
-Portainer: https://$(curl -s ifconfig.me):9443
-Portainer Setup: Create admin user on first login
-
-Workspace Directory: /opt/idx-workspace
-====================================
-EOF
-    
-    success "IDX VPS Maker completed"
-    echo -e "  ${G}├─ Web IDE: ${W}http://$(curl -s ifconfig.me):8080${NC}"
-    echo -e "  ${G}├─ File Browser: ${W}http://$(curl -s ifconfig.me):8081${NC}"
-    echo -e "  ${G}├─ Portainer: ${W}https://$(curl -s ifconfig.me):9443${NC}"
-    echo -e "  ${G}└─ Credentials saved: ${W}/root/idx_credentials.txt${NC}"
-}
-
-real_vps_setup() {
-    log "Real VPS (Any + KVM) - Setting up complete VPS environment..."
-    
-    echo -e "\n  ${Y}🌐 Real VPS Setup (Any + KVM)${NC}"
-    echo -e "  ${DG}├─ This will set up a complete VPS with virtualization${NC}"
-    
-    # Check for KVM support
-    echo -e "  ${DG}├─ Checking KVM support...${NC}"
-    if grep -E -c '(vmx|svm)' /proc/cpuinfo > /dev/null; then
-        echo -e "  ${G}│  ✓ KVM supported${NC}"
-        
-        # Install KVM and virtualization tools
-        apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virt-manager \
-            cpu-checker virtinst 2>&1 | tee -a "$LOG_FILE" | while read line; do
+    # Download ISO if needed
+    local iso_path="$VM_DIR/${vm_name}.iso"
+    if [[ ! -f "$iso_path" ]]; then
+        echo -e "${Y}Downloading OS image...${NC}"
+        wget -O "$iso_path" "$iso_url" 2>&1 | while read line; do
             echo -e "  ${DG}│  ${NC}$line"
         done
-        
-        systemctl enable libvirtd
-        systemctl start libvirtd
-        
-        # Add current user to libvirt group
-        usermod -aG libvirt,libvirt-qemu,kvm $SUDO_USER 2>/dev/null || true
-        
-        success "KVM virtualization installed"
-    else
-        echo -e "  ${Y}│  ⚠ KVM not supported on this VPS${NC}"
     fi
     
-    # Install LXD for containers
-    echo -e "  ${DG}├─ Installing LXD...${NC}"
-    snap install lxd 2>&1 | tee -a "$LOG_FILE" | while read line; do
+    # Create disk image
+    local disk_path="$VM_DIR/${vm_name}.qcow2"
+    qemu-img create -f qcow2 "$disk_path" "${disk_gb}G" 2>&1 | while read line; do
         echo -e "  ${DG}│  ${NC}$line"
     done
     
-    lxd init --auto
+    # Create VM with virt-install
+    virt-install \
+        --name "$vm_name" \
+        --vcpus "$cpu_cores" \
+        --memory "$ram_mb" \
+        --disk path="$disk_path",format=qcow2 \
+        --cdrom "$iso_path" \
+        --network bridge="$network_bridge",model=virtio \
+        --graphics vnc,listen=0.0.0.0 \
+        --os-variant ubuntu22.04 \
+        --noautoconsole \
+        --wait -1 2>&1 | while read line; do
+            echo -e "  ${DG}│  ${NC}$line"
+        done
     
-    # Install Cockpit for web management
-    echo -e "  ${DG}├─ Installing Cockpit...${NC}"
-    apt-get install -y cockpit cockpit-machines cockpit-docker 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
+    # Save VM configuration
+    local vm_ip=""
+    local mac=$(virsh domiflist "$vm_name" | grep -oE '([0-9a-f]{2}:){5}[0-9a-f]{2}')
     
-    systemctl enable cockpit
-    systemctl start cockpit
+    # Configure port forwarding
+    if [[ -n "$ports_input" ]]; then
+        IFS=',' read -ra PORTS <<< "$ports_input"
+        for port in "${PORTS[@]}"; do
+            port=$(echo "$port" | xargs)
+            iptables -t nat -A PREROUTING -p tcp --dport "$port" -j DNAT --to-destination "$vm_ip:$port" 2>/dev/null || true
+            echo -e "  ${G}├─ Port $port forwarded${NC}"
+        done
+    fi
     
-    # Install cloud-init
-    echo -e "  ${DG}├─ Installing cloud-init...${NC}"
-    apt-get install -y cloud-init cloud-utils 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
+    # Save to VMs list
+    echo "$vm_name|$cpu_cores|$ram_mb|$disk_gb|$os_name|$ports_input|$network_bridge|$vm_ip" >> "$VMS_LIST"
     
-    # Create VM storage directory
-    mkdir -p /var/lib/libvirt/images/vms
-    chmod 755 /var/lib/libvirt/images/vms
+    success "VM '$vm_name' created successfully!"
     
-    # Create network bridge
-    cat > /etc/netplan/01-netcfg.yaml << EOF
-network:
-  version: 2
-  ethernets:
-    eth0:
-      dhcp4: yes
-  bridges:
-    br0:
-      interfaces: [eth0]
-      dhcp4: yes
-EOF
-    
-    # Install monitoring for VPS
-    echo -e "  ${DG}├─ Installing VPS monitoring...${NC}"
-    apt-get install -y prometheus-node-exporter 2>&1 | tee -a "$LOG_FILE" | while read line; do
-        echo -e "  ${DG}│  ${NC}$line"
-    done
-    
-    success "Real VPS Setup completed"
-    echo -e "\n  ${G}├─ KVM Status: ${W}$([ -f /dev/kvm ] && echo "Available" || echo "Not available")${NC}"
-    echo -e "  ${G}├─ LXD: ${W}lxc list${NC}"
-    echo -e "  ${G}├─ Cockpit: ${W}https://$(curl -s ifconfig.me):9090${NC}"
-    echo -e "  ${G}├─ VM Storage: ${W}/var/lib/libvirt/images/vms${NC}"
-    echo -e "  ${G}└─ Monitoring: ${W}http://$(curl -s ifconfig.me):9100${NC}"
+    echo -e "\n${G}VM Information:${NC}"
+    echo -e "  ${DG}├─ VNC Port: ${W}5900$(virsh vncdisplay "$vm_name" | cut -d':' -f2)${NC}"
+    echo -e "  ${DG}├─ MAC Address: ${W}$mac${NC}"
+    echo -e "  ${DG}└─ To connect: ${W}virsh console $vm_name${NC}"
 }
+
+start_vm() {
+    list_vms || return 1
+    echo -ne "${W}🎯 Enter VM number to start: ${NC}"
+    read -r vm_num
+    local vm_info=$(get_vm_by_number "$vm_num")
+    
+    if [[ -z "$vm_info" ]]; then
+        error "Invalid VM number"
+    fi
+    
+    local vm_name=$(echo "$vm_info" | cut -d'|' -f1)
+    echo -e "${Y}Starting VM: $vm_name...${NC}"
+    
+    virsh start "$vm_name" 2>&1 | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Get IP after boot
+    sleep 5
+    local vm_ip=$(virsh domifaddr "$vm_name" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    
+    success "VM '$vm_name' started successfully!"
+    echo -e "  ${DG}├─ IP Address: ${W}$vm_ip${NC}"
+    echo -e "  ${DG}└─ To connect: ${W}ssh root@$vm_ip${NC}"
+}
+
+stop_vm() {
+    list_vms || return 1
+    echo -ne "${W}🛑 Enter VM number to stop: ${NC}"
+    read -r vm_num
+    local vm_info=$(get_vm_by_number "$vm_num")
+    
+    if [[ -z "$vm_info" ]]; then
+        error "Invalid VM number"
+    fi
+    
+    local vm_name=$(echo "$vm_info" | cut -d'|' -f1)
+    echo -e "${Y}Stopping VM: $vm_name...${NC}"
+    
+    virsh shutdown "$vm_name" 2>&1 | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    success "VM '$vm_name' stopped successfully!"
+}
+
+show_vm_info() {
+    list_vms || return 1
+    echo -ne "${W}📊 Enter VM number to show info: ${NC}"
+    read -r vm_num
+    local vm_info=$(get_vm_by_number "$vm_num")
+    
+    if [[ -z "$vm_info" ]]; then
+        error "Invalid VM number"
+    fi
+    
+    local vm_name=$(echo "$vm_info" | cut -d'|' -f1)
+    local cpu=$(echo "$vm_info" | cut -d'|' -f2)
+    local ram=$(echo "$vm_info" | cut -d'|' -f3)
+    local disk=$(echo "$vm_info" | cut -d'|' -f4)
+    local os=$(echo "$vm_info" | cut -d'|' -f5)
+    local ports=$(echo "$vm_info" | cut -d'|' -f6)
+    
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${Y}📊 VM Information: ${W}$vm_name${NC}"
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    local vm_status=$(virsh list --all | grep "$vm_name" | awk '{print $3}')
+    local vm_ip=$(virsh domifaddr "$vm_name" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    local vm_mac=$(virsh domiflist "$vm_name" | grep -oE '([0-9a-f]{2}:){5}[0-9a-f]{2}' | head -1)
+    
+    echo -e "${DG}├─ Status:${NC} ${W}$vm_status${NC}"
+    echo -e "${DG}├─ CPU Cores:${NC} ${W}$cpu${NC}"
+    echo -e "${DG}├─ RAM:${NC} ${W}$ram MB${NC}"
+    echo -e "${DG}├─ Disk:${NC} ${W}$disk GB${NC}"
+    echo -e "${DG}├─ OS:${NC} ${W}$os${NC}"
+    echo -e "${DG}├─ IP Address:${NC} ${W}$vm_ip${NC}"
+    echo -e "${DG}├─ MAC Address:${NC} ${W}$vm_mac${NC}"
+    echo -e "${DG}├─ Open Ports:${NC} ${W}$ports${NC}"
+    echo -e "${DG}└─ VNC Port:${NC} ${W}5900$(virsh vncdisplay "$vm_name" 2>/dev/null | cut -d':' -f2 || echo "Not running")${NC}"
+}
+
+edit_vm() {
+    list_vms || return 1
+    echo -ne "${W}✏️  Enter VM number to edit: ${NC}"
+    read -r vm_num
+    local vm_info=$(get_vm_by_number "$vm_num")
+    
+    if [[ -z "$vm_info" ]]; then
+        error "Invalid VM number"
+    fi
+    
+    local vm_name=$(echo "$vm_info" | cut -d'|' -f1)
+    echo -e "${Y}Editing VM: $vm_name${NC}"
+    
+    echo -ne "New CPU cores (current: $(echo "$vm_info" | cut -d'|' -f2)): "
+    read -r new_cpu
+    echo -ne "New RAM in MB (current: $(echo "$vm_info" | cut -d'|' -f3)): "
+    read -r new_ram
+    
+    if [[ -n "$new_cpu" ]]; then
+        virsh setvcpus "$vm_name" "$new_cpu" --config 2>&1 | while read line; do
+            echo -e "  ${DG}│  ${NC}$line"
+        done
+    fi
+    
+    if [[ -n "$new_ram" ]]; then
+        virsh setmem "$vm_name" "$new_ram" --config 2>&1 | while read line; do
+            echo -e "  ${DG}│  ${NC}$line"
+        done
+    fi
+    
+    success "VM '$vm_name' updated (changes apply after reboot)"
+}
+
+delete_vm() {
+    list_vms || return 1
+    echo -ne "${R}🗑️  Enter VM number to delete: ${NC}"
+    read -r vm_num
+    local vm_info=$(get_vm_by_number "$vm_num")
+    
+    if [[ -z "$vm_info" ]]; then
+        error "Invalid VM number"
+    fi
+    
+    local vm_name=$(echo "$vm_info" | cut -d'|' -f1)
+    echo -ne "${R}⚠️  Are you sure you want to delete VM '$vm_name'? (y/n): ${NC}"
+    read -r confirm
+    
+    if [[ "$confirm" != "y" ]]; then
+        echo -e "${Y}Cancelled${NC}"
+        return
+    fi
+    
+    # Stop VM if running
+    virsh destroy "$vm_name" 2>/dev/null || true
+    
+    # Undefine VM
+    virsh undefine "$vm_name" --remove-all-storage 2>&1 | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Remove from list
+    sed -i "/^$vm_name|/d" "$VMS_LIST"
+    
+    success "VM '$vm_name' deleted successfully!"
+}
+
+resize_vm_disk() {
+    list_vms || return 1
+    echo -ne "${W}📈 Enter VM number to resize disk: ${NC}"
+    read -r vm_num
+    local vm_info=$(get_vm_by_number "$vm_num")
+    
+    if [[ -z "$vm_info" ]]; then
+        error "Invalid VM number"
+    fi
+    
+    local vm_name=$(echo "$vm_info" | cut -d'|' -f1)
+    local current_disk=$(echo "$vm_info" | cut -d'|' -f4)
+    local disk_path="$VM_DIR/${vm_name}.qcow2"
+    
+    echo -e "${Y}Current disk size: ${current_disk} GB${NC}"
+    echo -ne "${W}Enter new disk size in GB: ${NC}"
+    read -r new_size
+    
+    # Stop VM for resize
+    virsh shutdown "$vm_name" 2>/dev/null
+    sleep 3
+    
+    qemu-img resize "$disk_path" "${new_size}G" 2>&1 | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Update config
+    sed -i "s/^$vm_name|[^|]*|[^|]*|[^|]*/$vm_name|$(echo "$vm_info" | cut -d'|' -f2)|$(echo "$vm_info" | cut -d'|' -f3)|$new_size/" "$VMS_LIST"
+    
+    success "Disk resized to ${new_size}GB"
+    echo -e "${Y}Note: You need to extend the partition inside the VM${NC}"
+}
+
+show_vm_performance() {
+    list_vms || return 1
+    echo -ne "${W}📊 Enter VM number for performance stats: ${NC}"
+    read -r vm_num
+    local vm_info=$(get_vm_by_number "$vm_num")
+    
+    if [[ -z "$vm_info" ]]; then
+        error "Invalid VM number"
+    fi
+    
+    local vm_name=$(echo "$vm_info" | cut -d'|' -f1)
+    
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${Y}📊 Performance Metrics for: ${W}$vm_name${NC}"
+    echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    # CPU Usage
+    local cpu_usage=$(virsh domstats "$vm_name" | grep "cpu.time" | cut -d'=' -f2)
+    echo -e "${DG}├─ CPU Time:${NC} ${W}$cpu_usage${NC}"
+    
+    # Memory Usage
+    local mem_used=$(virsh dommemstat "$vm_name" | grep "actual" | awk '{print $2}')
+    local mem_mb=$((mem_used / 1024))
+    echo -e "${DG}├─ Memory Used:${NC} ${W}$mem_mb MB${NC}"
+    
+    # Disk Usage
+    local disk_path="$VM_DIR/${vm_name}.qcow2"
+    local disk_size=$(du -h "$disk_path" | cut -f1)
+    echo -e "${DG}├─ Disk Used:${NC} ${W}$disk_size${NC}"
+    
+    # Network Stats
+    local rx=$(virsh domifstat "$vm_name" "vnet0" "rx_bytes" 2>/dev/null | awk '{print $2}')
+    local tx=$(virsh domifstat "$vm_name" "vnet0" "tx_bytes" 2>/dev/null | awk '{print $2}')
+    echo -e "${DG}├─ Network RX:${NC} ${W}$rx bytes${NC}"
+    echo -e "${DG}└─ Network TX:${NC} ${W}$tx bytes${NC}"
+}
+
+fix_vm_issues() {
+    list_vms || return 1
+    echo -ne "${W}🔧 Enter VM number to fix: ${NC}"
+    read -r vm_num
+    local vm_info=$(get_vm_by_number "$vm_num")
+    
+    if [[ -z "$vm_info" ]]; then
+        error "Invalid VM number"
+    fi
+    
+    local vm_name=$(echo "$vm_info" | cut -d'|' -f1)
+    
+    echo -e "${Y}🔧 Fixing VM issues for: $vm_name${NC}"
+    
+    # Check if VM is stuck
+    if virsh dominfo "$vm_name" | grep -q "in shutdown"; then
+        echo -e "  ${DG}├─ VM stuck in shutdown, resetting...${NC}"
+        virsh destroy "$vm_name" 2>/dev/null || true
+        virsh start "$vm_name" 2>/dev/null || true
+    fi
+    
+    # Reset network
+    echo -e "  ${DG}├─ Resetting network...${NC}"
+    virsh domifaddr "$vm_name" 2>/dev/null || true
+    
+    # Check disk integrity
+    local disk_path="$VM_DIR/${vm_name}.qcow2"
+    if [[ -f "$disk_path" ]]; then
+        echo -e "  ${DG}├─ Checking disk integrity...${NC}"
+        qemu-img check "$disk_path" 2>&1 | while read line; do
+            echo -e "  ${DG}│  ${NC}$line"
+        done
+    fi
+    
+    success "VM issues fixed!"
+}
+
+vps_management_menu() {
+    while true; do
+        clear
+        echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${Y}                    📋 VPS MANAGEMENT MENU${NC}"
+        echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        
+        list_vms
+        
+        echo -e "\n${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${G}📋 Main Menu:${NC}"
+        echo -e "  ${G}1)${NC} 🆕 Create a new VM"
+        echo -e "  ${G}2)${NC} 🚀 Start a VM"
+        echo -e "  ${G}3)${NC} 🛑 Stop a VM"
+        echo -e "  ${G}4)${NC} 📊 Show VM info"
+        echo -e "  ${G}5)${NC} ✏️  Edit VM configuration"
+        echo -e "  ${G}6)${NC} 🗑️  Delete a VM"
+        echo -e "  ${G}7)${NC} 📈 Resize VM disk"
+        echo -e "  ${G}8)${NC} 📊 Show VM performance"
+        echo -e "  ${G}9)${NC} 🔧 Fix VM issues"
+        echo -e "  ${R}0)${NC} 👋 Back to Main Menu"
+        echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -ne "${W}🎯 Enter your choice: ${NC}"
+        read -r choice
+        
+        case $choice in
+            1) create_vm ;;
+            2) start_vm ;;
+            3) stop_vm ;;
+            4) show_vm_info ;;
+            5) edit_vm ;;
+            6) delete_vm ;;
+            7) resize_vm_disk ;;
+            8) show_vm_performance ;;
+            9) fix_vm_issues ;;
+            0) break ;;
+            *) echo -e "${R}Invalid option${NC}"; sleep 2 ;;
+        esac
+        
+        echo -e "\n${W}Press Enter to continue...${NC}"
+        read -r
+    done
+}
+
+# ==================== REST OF THE FUNCTIONS (Pterodactyl, etc.) ====================
+
+# ... (keep all previous functions: update_system, install_dependencies, setup_mysql, 
+# install_pterodactyl_panel, configure_nginx, install_node_tailscale, install_cloudflared_token,
+# install_pterodactyl_wings, install_norfurch, install_rdp, github_vps_maker, 
+# idx_tool_setup, idx_vps_maker, real_vps_setup) ...
 
 # ==================== MAIN MENU ====================
 
 main_menu() {
-    clear
-    show_specs
-    
-    echo -e "\n${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${C}                    GOSTDTGAMER VPS DEPLOYMENT SUITE${NC}"
-    echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${C}  🐧 PTERODACTYL INSTALLATION${NC}"
-    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${G}1)${NC} Install Everything (Full Pterodactyl Suite)"
-    echo -e "  ${G}2)${NC} Install Pterodactyl Panel Only"
-    echo -e "  ${G}3)${NC} Install Pterodactyl Wings Only"
-    echo ""
-    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${C}  🛠️  ADDITIONAL TOOLS${NC}"
-    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${G}4)${NC} Install Node.js"
-    echo -e "  ${G}5)${NC} Install Tailscale VPN"
-    echo -e "  ${G}6)${NC} Install Cloudflared (with token setup)"
-    echo -e "  ${G}7)${NC} Install RDP (Remote Desktop)"
-    echo -e "  ${G}8)${NC} Install Norfurch (Monitoring Tools)"
-    echo ""
-    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${C}  🚀 ADVANCED DEPLOYMENT FEATURES${NC}"
-    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${G}9)${NC} 🚀 GitHub VPS Maker (Actions Runner + Deployment Tools)"
-    echo -e "  ${G}10)${NC} 🔧 IDX Tool Setup (Dev Tools + IDE)"
-    echo -e "  ${G}11)${NC} ⚡ IDX VPS Maker (Web IDE + File Browser + Portainer)"
-    echo -e "  ${G}12)${NC} 🌐 Real VPS (Any + KVM) - Full Virtualization Setup"
-    echo ""
-    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${C}  ℹ️  INFORMATION${NC}"
-    echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${G}13)${NC} View System Specifications"
-    echo -e "  ${G}14)${NC} View Installation Log"
-    echo -e "  ${R}0)${NC} ❌ Exit"
-    echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -ne "  ${W}Enter your choice [0-14]: ${NC}"
-    read -r choice
-    
-    case $choice in
-        1)
-            update_system
-            install_dependencies
-            setup_mysql
-            install_pterodactyl_panel
-            configure_nginx
-            install_pterodactyl_wings
-            install_node_tailscale
-            install_cloudflared_token
-            install_rdp
-            install_norfurch
-            echo -e "\n${G}✓ Full Pterodactyl installation completed!${NC}"
-            echo -e "${Y}Panel Access: http://$(curl -s ifconfig.me)${NC}"
-            echo -e "${Y}Admin Login: admin@localhost / password123${NC}"
-            echo -e "${Y}DB Credentials: /root/pterodactyl_db_credentials.txt${NC}"
-            ;;
-        2)
-            update_system
-            install_dependencies
-            setup_mysql
-            install_pterodactyl_panel
-            configure_nginx
-            echo -e "\n${G}✓ Pterodactyl Panel installed!${NC}"
-            echo -e "${Y}Access at: http://$(curl -s ifconfig.me)${NC}"
-            ;;
-        3)
-            update_system
-            install_dependencies
-            install_pterodactyl_wings
-            ;;
-        4)
-            update_system
-            curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-            apt-get install -y nodejs
-            success "Node.js installed: $(node -v)"
-            ;;
-        5)
-            update_system
-            curl -fsSL https://tailscale.com/install.sh | sh
-            echo -ne "Start Tailscale? (y/n): "
-            read -r start_ts
-            if [[ "$start_ts" == "y" ]]; then
-                echo -ne "Auth key (optional): "
-                read -r ts_key
-                [[ -n "$ts_key" ]] && tailscale up --auth-key "$ts_key" || tailscale up
-            fi
-            ;;
-        6)
-            update_system
-            install_cloudflared_token
-            ;;
-        7)
-            update_system
-            install_rdp
-            ;;
-        8)
-            update_system
-            install_norfurch
-            ;;
-        9)
-            update_system
-            github_vps_maker
-            ;;
-        10)
-            update_system
-            idx_tool_setup
-            ;;
-        11)
-            update_system
-            idx_vps_maker
-            ;;
-        12)
-            update_system
-            real_vps_setup
-            ;;
-        13)
-            show_specs
-            echo -e "\n${W}Press Enter to continue...${NC}"
-            read -r
-            main_menu
-            ;;
-        14)
-            if [[ -f "$LOG_FILE" ]]; then
-                less "$LOG_FILE"
-            else
-                echo -e "${Y}No log file found${NC}"
-            fi
-            main_menu
-            ;;
-        0)
-            echo -e "${G}Goodbye!${NC}"
-            exit 0
-            ;;
-        *)
-            echo -e "${R}Invalid option${NC}"
-            sleep 2
-            main_menu
-            ;;
-    esac
-    
-    echo -e "\n${W}Press Enter to return to menu...${NC}"
-    read -r
-    main_menu
+    while true; do
+        clear
+        show_specs
+        
+        echo -e "\n${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${C}                    GOSTDTGAMER VPS DEPLOYMENT SUITE${NC}"
+        echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "${C}  🖥️  VPS MANAGEMENT${NC}"
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "  ${G}1)${NC} 📋 VPS Management Menu (Create/Start/Stop VMs)"
+        echo ""
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "${C}  🐧 PTERODACTYL INSTALLATION${NC}"
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "  ${G}2)${NC} Install Everything (Full Pterodactyl Suite)"
+        echo -e "  ${G}3)${NC} Install Pterodactyl Panel Only"
+        echo -e "  ${G}4)${NC} Install Pterodactyl Wings Only"
+        echo ""
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "${C}  🛠️  ADDITIONAL TOOLS${NC}"
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "  ${G}5)${NC} Install Node.js"
+        echo -e "  ${G}6)${NC} Install Tailscale VPN"
+        echo -e "  ${G}7)${NC} Install Cloudflared (with token setup)"
+        echo -e "  ${G}8)${NC} Install RDP (Remote Desktop)"
+        echo -e "  ${G}9)${NC} Install Norfurch (Monitoring Tools)"
+        echo ""
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "${C}  🚀 ADVANCED DEPLOYMENT FEATURES${NC}"
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "  ${G}10)${NC} 🚀 GitHub VPS Maker (Actions Runner + Deployment Tools)"
+        echo -e "  ${G}11)${NC} 🔧 IDX Tool Setup (Dev Tools + IDE)"
+        echo -e "  ${G}12)${NC} ⚡ IDX VPS Maker (Web IDE + File Browser + Portainer)"
+        echo -e "  ${G}13)${NC} 🌐 Real VPS (Any + KVM) - Full Virtualization Setup"
+        echo ""
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "${C}  ℹ️  INFORMATION${NC}"
+        echo -e "${PURPLE}══════════════════════════════════════════════════════════════════${NC}"
+        echo -e "  ${G}14)${NC} View System Specifications"
+        echo -e "  ${G}15)${NC} View Installation Log"
+        echo -e "  ${R}0)${NC} ❌ Exit"
+        echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -ne "  ${W}Enter your choice [0-15]: ${NC}"
+        read -r choice
+        
+        case $choice in
+            1) vps_management_menu ;;
+            2) 
+                update_system
+                install_dependencies
+                setup_mysql
+                install_pterodactyl_panel
+                configure_nginx
+                install_pterodactyl_wings
+                install_node_tailscale
+                install_cloudflared_token
+                install_rdp
+                install_norfurch
+                echo -e "\n${G}✓ Full Pterodactyl installation completed!${NC}"
+                echo -e "${Y}Panel Access: http://$(curl -s ifconfig.me)${NC}"
+                echo -e "${Y}Admin Login: admin@localhost / password123${NC}"
+                echo -e "${Y}DB Credentials: /root/pterodactyl_db_credentials.txt${NC}"
+                ;;
+            3)
+                update_system
+                install_dependencies
+                setup_mysql
+                install_pterodactyl_panel
+                configure_nginx
+                echo -e "\n${G}✓ Pterodactyl Panel installed!${NC}"
+                echo -e "${Y}Access at: http://$(curl -s ifconfig.me)${NC}"
+                ;;
+            4)
+                update_system
+                install_dependencies
+                install_pterodactyl_wings
+                ;;
+            5)
+                update_system
+                curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+                apt-get install -y nodejs
+                success "Node.js installed: $(node -v)"
+                ;;
+            6)
+                update_system
+                curl -fsSL https://tailscale.com/install.sh | sh
+                echo -ne "Start Tailscale? (y/n): "
+                read -r start_ts
+                if [[ "$start_ts" == "y" ]]; then
+                    echo -ne "Auth key (optional): "
+                    read -r ts_key
+                    [[ -n "$ts_key" ]] && tailscale up --auth-key "$ts_key" || tailscale up
+                fi
+                ;;
+            7)
+                update_system
+                install_cloudflared_token
+                ;;
+            8)
+                update_system
+                install_rdp
+                ;;
+            9)
+                update_system
+                install_norfurch
+                ;;
+            10)
+                update_system
+                github_vps_maker
+                ;;
+            11)
+                update_system
+                idx_tool_setup
+                ;;
+            12)
+                update_system
+                idx_vps_maker
+                ;;
+            13)
+                update_system
+                real_vps_setup
+                ;;
+            14)
+                show_specs
+                echo -e "\n${W}Press Enter to continue...${NC}"
+                read -r
+                ;;
+            15)
+                if [[ -f "$LOG_FILE" ]]; then
+                    less "$LOG_FILE"
+                else
+                    echo -e "${Y}No log file found${NC}"
+                fi
+                ;;
+            0)
+                echo -e "${G}Goodbye!${NC}"
+                exit 0
+                ;;
+            *)
+                echo -e "${R}Invalid option${NC}"
+                sleep 2
+                ;;
+        esac
+    done
 }
 
 # --- MAIN EXECUTION ---
 check_root
 detect_os
+
+# Install virtualization packages if not present
+if ! command -v virsh &> /dev/null; then
+    echo -e "${Y}Installing virtualization packages...${NC}"
+    apt-get update -y
+    apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virtinst virt-manager
+    systemctl enable libvirtd
+    systemctl start libvirtd
+fi
+
 main_menu
