@@ -1,104 +1,113 @@
 #!/usr/bin/env bash
 
-# COLORS
 RED='\033[1;31m'
 GREEN='\033[1;32m'
 CYAN='\033[1;36m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# SYSTEM INFO
-CPU=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}')
-RAM=$(free -m | awk 'NR==2{printf "%.0f%%", $3*100/$2}')
-DISK=$(df / | awk 'NR==2{print $5}')
+check_kvm(){
+if egrep -c '(vmx|svm)' /proc/cpuinfo > /dev/null; then
+echo "KVM: SUPPORTED"
+else
+echo "KVM: NOT SUPPORTED"
+fi
+}
 
-# BANNER
 banner(){
 clear
 echo -e "${CYAN}"
-echo "════════════════════════════════════════════"
-echo "        CODEHUB CLOUD CONTROL PANEL"
-echo "════════════════════════════════════════════"
+echo "████████████████████████████████████████████"
+echo "        CODEHUB CLOUD VPS MANAGER"
+echo "████████████████████████████████████████████"
 echo -e "${NC}"
-echo "CPU: $CPU% | RAM: $RAM | Disk: $DISK"
+check_kvm
 echo ""
 }
 
-# INSTALL DOCKER
-install_docker(){
-echo "Installing Docker..."
-apt update -y
-apt install docker.io -y
-systemctl enable docker
-}
-
-# INSTALL LXD VPS SYSTEM
 install_lxd(){
-echo "Installing LXD..."
+apt update -y
 apt install lxd -y
 lxd init --auto
 }
 
-# CREATE VPS
-create_vps(){
-read -p "VPS Name: " name
-lxc launch ubuntu:22.04 $name
-echo "VPS Created!"
-}
+select_os(){
+echo "Choose OS:"
+echo "1) Ubuntu 22.04"
+echo "2) Debian 12"
+echo "3) Alpine"
+read -p "OS Choice: " os
 
-# TOOLS MENU
-tools_menu(){
-while true
-do
-clear
-echo "SERVER UTILITIES & TOOLS"
-echo ""
-echo "1) System Info"
-echo "2) Install Tailscale"
-echo "3) Install Zerotier"
-echo "4) Install RDP"
-echo "0) Back"
-
-read -p "Select Tool: " tool
-
-case $tool in
-1) neofetch ;;
-2) curl -fsSL https://tailscale.com/install.sh | sh ;;
-3) curl -s https://install.zerotier.com | bash ;;
-4) apt install xfce4 xrdp -y ;;
-0) break ;;
-*) echo "Invalid option" ;;
+case $os in
+1) IMAGE="images:ubuntu/22.04" ;;
+2) IMAGE="images:debian/12" ;;
+3) IMAGE="images:alpine/3.18" ;;
+*) echo "Invalid OS"; return ;;
 esac
-
-read -p "Press Enter..."
-done
 }
 
-# MAIN MENU
-main_menu(){
+create_vps(){
+
+select_os
+
+read -p "VPS Name: " NAME
+read -p "RAM (MB): " RAM
+read -p "CPU cores: " CPU
+read -p "Disk size (GB): " DISK
+read -p "Open Port: " PORT
+
+echo "Creating VPS..."
+
+lxc launch $IMAGE $NAME
+
+lxc config set $NAME limits.memory ${RAM}MB
+lxc config set $NAME limits.cpu $CPU
+
+lxc config device add $NAME root disk path=/ pool=default size=${DISK}GB
+
+IP=$(lxc list $NAME -c 4 | tail -n1)
+
+echo "VPS Created!"
+echo "IP: $IP"
+
+read -p "Start VPS now? (y/n): " start
+if [ "$start" = "y" ]; then
+lxc start $NAME
+fi
+}
+
+list_vps(){
+lxc list
+}
+
+delete_vps(){
+read -p "VPS Name to delete: " NAME
+lxc delete $NAME --force
+}
+
 while true
 do
 banner
 
-echo "VIRTUALIZATION & NODES"
-echo "1) Install Docker"
-echo "2) Install LXD"
-echo "3) Create VPS"
-echo "4) Tools"
+echo "VPS MANAGEMENT"
+echo "1) Install VPS System (LXD)"
+echo "2) Create VPS"
+echo "3) List VPS"
+echo "4) Delete VPS"
+echo "5) System Info"
 echo "0) Exit"
 
 read -p "Command: " choice
 
 case $choice in
-1) install_docker ;;
-2) install_lxd ;;
-3) create_vps ;;
-4) tools_menu ;;
+1) install_lxd ;;
+2) create_vps ;;
+3) list_vps ;;
+4) delete_vps ;;
+5) lscpu && free -h && df -h ;;
 0) exit ;;
 *) echo "Invalid option" ;;
 esac
 
-read -p "Press Enter..."
+read -p "Press enter to continue..."
 done
-}
-
-main_menu
