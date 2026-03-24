@@ -423,7 +423,7 @@ uninstall_tailscale() {
     echo -e "  ${GREEN}✓ Tailscale removed from system${NC}"
 }
 
-# Install Cloudflared with Token Setup
+# Install Cloudflared - THIS IS THE MAIN CLOUDFLARED INSTALL FUNCTION
 install_cloudflared() {
     log "Installing Cloudflared..."
     
@@ -432,19 +432,19 @@ install_cloudflared() {
     echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
     echo ""
     
-    # Add cloudflare gpg key
-    echo -e "  ${WHITE}Step 1: Adding Cloudflare GPG key...${NC}"
+    # Step 1: Add cloudflare gpg key
+    echo -e "  ${WHITE}[1/3] Adding Cloudflare GPG key...${NC}"
     mkdir -p --mode=0755 /usr/share/keyrings
     curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg | tee /usr/share/keyrings/cloudflare-public-v2.gpg > /dev/null
     success "GPG key added"
     
-    # Add repository
-    echo -e "  ${WHITE}Step 2: Adding Cloudflare repository...${NC}"
+    # Step 2: Add repository
+    echo -e "  ${WHITE}[2/3] Adding Cloudflare repository...${NC}"
     echo 'deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main' | tee /etc/apt/sources.list.d/cloudflared.list
     success "Repository added"
     
-    # Update and install
-    echo -e "  ${WHITE}Step 3: Installing cloudflared...${NC}"
+    # Step 3: Install cloudflared
+    echo -e "  ${WHITE}[3/3] Installing cloudflared...${NC}"
     apt-get update >> "$LOG_FILE" 2>&1
     apt-get install -y cloudflared >> "$LOG_FILE" 2>&1
     success "Cloudflared installed: $(cloudflared version)"
@@ -452,87 +452,32 @@ install_cloudflared() {
     echo -e "\n  ${GREEN}✓ Cloudflared installation complete!${NC}"
     echo ""
     
-    # Ask for token setup
+    # NOW PROMPT FOR TOKEN
     echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}🔑 CLOUDFLARE TOKEN SETUP${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "  ${WHITE}Do you want to set up a Cloudflare Tunnel with your token?${NC}"
-    echo -e "  ${GREEN}1)${NC} Yes, set up tunnel with token"
-    echo -e "  ${RED}2)${NC} No, skip for now"
-    echo ""
-    echo -ne "  ${WHITE}Enter your choice [1-2]: ${NC}"
-    read token_choice
-    
-    if [[ "$token_choice" == "1" ]]; then
-        setup_cloudflare_with_token
-    else
-        echo -e "\n  ${YELLOW}You can set up a tunnel later by running:${NC}"
-        echo -e "  ${WHITE}cloudflared tunnel login${NC}"
-        echo -e "  ${WHITE}cloudflared tunnel create <tunnel-name>${NC}"
-    fi
-}
-
-# Setup Cloudflare Tunnel with Token
-setup_cloudflare_with_token() {
-    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}🔧 CLOUDFLARE TUNNEL SETUP${NC}"
+    echo -e "  ${GREEN}🔑 ENTER YOUR CLOUDFLARE TUNNEL TOKEN${NC}"
     echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
     echo ""
-    
-    # Ask for token
-    echo -e "  ${WHITE}Please enter your Cloudflare Tunnel Token:${NC}"
-    echo -e "  ${YELLOW}(You can get this from Cloudflare Dashboard > Zero Trust > Networks > Tunnels)${NC}"
+    echo -e "  ${WHITE}You can get your token from:${NC}"
+    echo -e "  ${CYAN}https://dash.cloudflare.com/ → Zero Trust → Networks → Tunnels${NC}"
+    echo -e "  ${WHITE}Create a tunnel and copy the token${NC}"
     echo ""
-    echo -ne "  ${GREEN}► Put your token: ${NC}"
+    echo -ne "  ${GREEN}► Enter your Cloudflare Token: ${NC}"
     read CLOUDFLARE_TOKEN
     
     if [[ -z "$CLOUDFLARE_TOKEN" ]]; then
-        echo -e "\n  ${RED}Token cannot be empty! Skipping tunnel setup.${NC}"
+        echo -e "\n  ${RED}No token entered! Skipping tunnel setup.${NC}"
+        echo -e "  ${YELLOW}You can set up later with: cloudflared tunnel --token YOUR_TOKEN run${NC}"
         return
     fi
     
-    # Validate token format (basic check)
-    if [[ ! "$CLOUDFLARE_TOKEN" =~ ^[a-zA-Z0-9_-]+$ ]] && [[ ! "$CLOUDFLARE_TOKEN" =~ ^[A-Za-z0-9]+ ]]; then
-        echo -e "\n  ${YELLOW}⚠️  Token format looks unusual, but we'll try to use it.${NC}"
-    fi
+    echo -e "\n  ${WHITE}Setting up tunnel with your token...${NC}"
     
-    echo -e "\n  ${WHITE}Verifying and setting up tunnel with your token...${NC}"
+    # Save token for future use
+    mkdir -p /root/.cloudflared
+    echo "$CLOUDFLARE_TOKEN" > /root/.cloudflared/token
     
-    # Create tunnel using token
-    echo -e "  ${WHITE}Creating tunnel with provided token...${NC}"
-    
-    # Use the token to create and run tunnel
-    cloudflared tunnel --token "$CLOUDFLARE_TOKEN" run &
-    TUNNEL_PID=$!
-    
-    # Wait a moment to see if it starts
-    sleep 3
-    
-    # Check if tunnel is running
-    if ps -p $TUNNEL_PID > /dev/null 2>&1; then
-        success "✓ Tunnel created and running successfully!"
-        echo -e "\n  ${GREEN}Your Cloudflare Tunnel is now active!${NC}"
-        echo -e "  ${WHITE}Process ID: $TUNNEL_PID${NC}"
-        echo -e "  ${YELLOW}To stop the tunnel: kill $TUNNEL_PID${NC}"
-        
-        # Ask if user wants to install as service
-        echo -e "\n  ${WHITE}Do you want to install this tunnel as a service (auto-start on boot)?${NC}"
-        echo -e "  ${GREEN}1)${NC} Yes, install as service"
-        echo -e "  ${RED}2)${NC} No, keep running in background"
-        echo ""
-        echo -ne "  ${WHITE}Enter your choice [1-2]: ${NC}"
-        read service_choice
-        
-        if [[ "$service_choice" == "1" ]]; then
-            # Save token for service
-            mkdir -p /root/.cloudflared
-            cat > /root/.cloudflared/token << EOF
-$CLOUDFLARE_TOKEN
-EOF
-            
-            # Create service file
-            cat > /etc/systemd/system/cloudflared-tunnel.service << EOF
+    # Create systemd service
+    cat > /etc/systemd/system/cloudflared-tunnel.service << EOF
 [Unit]
 Description=Cloudflare Tunnel
 After=network.target
@@ -547,20 +492,25 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-            
-            systemctl daemon-reload
-            systemctl enable cloudflared-tunnel
-            systemctl start cloudflared-tunnel
-            
-            success "✓ Tunnel installed as system service"
-            echo -e "  ${WHITE}Status: systemctl status cloudflared-tunnel${NC}"
-            echo -e "  ${WHITE}Stop: systemctl stop cloudflared-tunnel${NC}"
-            echo -e "  ${WHITE}Start: systemctl start cloudflared-tunnel${NC}"
-        fi
+    
+    # Start the tunnel
+    systemctl daemon-reload
+    systemctl enable cloudflared-tunnel
+    systemctl start cloudflared-tunnel
+    
+    sleep 3
+    
+    # Check if tunnel is running
+    if systemctl is-active --quiet cloudflared-tunnel; then
+        success "✓ Cloudflare Tunnel is running!"
+        echo -e "\n  ${GREEN}Your tunnel is now active and will auto-start on boot!${NC}"
+        echo -e "  ${WHITE}Status: systemctl status cloudflared-tunnel${NC}"
+        echo -e "  ${WHITE}Stop:   systemctl stop cloudflared-tunnel${NC}"
+        echo -e "  ${WHITE}Start:  systemctl start cloudflared-tunnel${NC}"
+        echo -e "  ${WHITE}Logs:   journalctl -u cloudflared-tunnel -f${NC}"
     else
-        echo -e "\n  ${RED}✗ Failed to start tunnel. Please check your token.${NC}"
-        echo -e "  ${YELLOW}You can try setting up manually:${NC}"
-        echo -e "  ${WHITE}cloudflared tunnel --token YOUR_TOKEN run${NC}"
+        echo -e "\n  ${RED}Failed to start tunnel. Checking token...${NC}"
+        echo -e "  ${YELLOW}Try running manually: cloudflared tunnel --token $CLOUDFLARE_TOKEN run${NC}"
     fi
 }
 
@@ -579,6 +529,7 @@ uninstall_cloudflared() {
         systemctl stop cloudflared-tunnel >> "$LOG_FILE" 2>&1
         systemctl disable cloudflared-tunnel >> "$LOG_FILE" 2>&1
         rm -f /etc/systemd/system/cloudflared-tunnel.service
+        systemctl daemon-reload
     fi
     
     # Kill any running cloudflared processes
@@ -617,12 +568,15 @@ show_cloudflared_status() {
         # Check if tunnel service is running
         if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
             echo -e "  ${GREEN}✓ Tunnel service is running${NC}"
-            systemctl status cloudflared-tunnel --no-pager | head -5
-        elif pgrep -f "cloudflared tunnel" > /dev/null; then
-            echo -e "  ${GREEN}✓ Tunnel is running in background${NC}"
-            echo -e "  ${WHITE}PID: $(pgrep -f 'cloudflared tunnel')${NC}"
+            echo -e "  ${WHITE}Status: $(systemctl is-active cloudflared-tunnel)${NC}"
         else
-            echo -e "  ${YELLOW}⚠ No tunnel is currently running${NC}"
+            echo -e "  ${YELLOW}⚠ Tunnel service is not running${NC}"
+            echo -e "  ${WHITE}Start with: systemctl start cloudflared-tunnel${NC}"
+        fi
+        
+        # Check if token exists
+        if [[ -f "/root/.cloudflared/token" ]]; then
+            echo -e "  ${GREEN}✓ Token file exists${NC}"
         fi
     else
         echo -e "  ${RED}✗ Cloudflared is not installed${NC}"
@@ -813,13 +767,10 @@ cloudflared_menu() {
             echo -e "  ${GREEN}Status: CLOUDFLARED IS INSTALLED${NC}"
             echo -e "  ${WHITE}Version: $(cloudflared version 2>/dev/null | head -1)${NC}"
             
-            # Check if tunnel is running
             if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
-                echo -e "  ${GREEN}Tunnel Status: SERVICE RUNNING ✓${NC}"
-            elif pgrep -f "cloudflared tunnel" > /dev/null; then
-                echo -e "  ${GREEN}Tunnel Status: RUNNING ✓${NC}"
+                echo -e "  ${GREEN}Tunnel: RUNNING ✓${NC}"
             else
-                echo -e "  ${YELLOW}Tunnel Status: NOT RUNNING${NC}"
+                echo -e "  ${YELLOW}Tunnel: NOT RUNNING${NC}"
             fi
         else
             echo -e "  ${RED}Status: CLOUDFLARED NOT INSTALLED${NC}"
@@ -829,36 +780,31 @@ cloudflared_menu() {
         echo -e "  ${GREEN}1)${NC} Install Cloudflared (with token setup)"
         echo -e "  ${RED}2)${NC} Uninstall Cloudflared"
         echo -e "  ${GREEN}3)${NC} Show Status"
-        echo -e "  ${GREEN}4)${NC} Setup Tunnel with Token"
-        echo -e "  ${GREEN}5)${NC} Start Tunnel (if token saved)"
-        echo -e "  ${RED}6)${NC} Stop Tunnel"
+        echo -e "  ${GREEN}4)${NC} Start Tunnel Service"
+        echo -e "  ${RED}5)${NC} Stop Tunnel Service"
         echo -e "  ${YELLOW}0)${NC} Back to Main Menu"
         echo ""
-        echo -ne "${WHITE}Enter your choice [0-6]: ${NC}"
+        echo -ne "${WHITE}Enter your choice [0-5]: ${NC}"
         read choice
         
         case $choice in
             1) install_cloudflared ;;
             2) uninstall_cloudflared ;;
             3) show_cloudflared_status ;;
-            4) setup_cloudflare_with_token ;;
-            5)
+            4) 
                 if [[ -f "/root/.cloudflared/token" ]]; then
-                    echo -e "${YELLOW}Starting tunnel with saved token...${NC}"
-                    cloudflared tunnel --token "$(cat /root/.cloudflared/token)" run &
-                    echo -e "${GREEN}Tunnel started in background${NC}"
+                    systemctl start cloudflared-tunnel
+                    systemctl enable cloudflared-tunnel
+                    echo -e "${GREEN}Tunnel service started${NC}"
                 else
-                    echo -e "${RED}No saved token found. Please setup tunnel first.${NC}"
+                    echo -e "${RED}No token found. Please install first.${NC}"
                 fi
                 echo -ne "\n${WHITE}Press Enter...${NC}"
                 read
                 ;;
-            6)
-                pkill -f "cloudflared tunnel" 2>/dev/null || true
-                if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
-                    systemctl stop cloudflared-tunnel
-                fi
-                echo -e "${GREEN}All tunnels stopped${NC}"
+            5)
+                systemctl stop cloudflared-tunnel 2>/dev/null || true
+                echo -e "${GREEN}Tunnel service stopped${NC}"
                 echo -ne "\n${WHITE}Press Enter...${NC}"
                 read
                 ;;
