@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==========================================================
-# GOSTDTGAMER CLOUD SYSTEM | VPS DEPLOYMENT SUITE
+# GOSTDTGAMER CLOUD SYSTEM | PTERODACTYL DEPLOYMENT SUITE
 # DATE: 2026-03-25 | UI-TYPE: SEMA-HYPER-VISUAL
 # ==========================================================
 set -euo pipefail
@@ -16,8 +16,11 @@ PURPLE='\033[1;38;5;141m'
 NC='\033[0m'          # Reset
 
 # --- CONFIG ---
-LOG_FILE="/tmp/gostdtgamer_install.log"
-INSTALL_DIR="/opt/gostdtgamer"
+LOG_FILE="/tmp/gostdtgamer_ptero_install.log"
+PTERO_DIR="/var/www/pterodactyl"
+WINGS_DIR="/etc/pterodactyl"
+MYSQL_ROOT_PASS=""
+MYSQL_PTERO_PASS=""
 
 # --- FUNCTIONS ---
 log() {
@@ -59,16 +62,16 @@ show_specs() {
     clear
     echo -e "${G}"
     cat << "EOF"
- ██████╗  ██████╗ ███████╗████████╗██████╗  ██████╗ ████████╗ ██████╗  █████╗ ███╗   ███╗███████╗██████╗ 
-██╔════╝ ██╔═══██╗██╔════╝╚══██╔══╝██╔══██╗██╔════╝ ╚══██╔══╝██╔════╝ ██╔══██╗████╗ ████║██╔════╝██╔══██╗
-██║  ███╗██║   ██║███████╗   ██║   ██║  ██║██║  ███╗   ██║   ██║  ███╗███████║██╔████╔██║█████╗  ██████╔╝
-██║   ██║██║   ██║╚════██║   ██║   ██║  ██║██║   ██║   ██║   ██║   ██║██╔══██║██║╚██╔╝██║██╔══╝  ██╔══██╗
-╚██████╔╝╚██████╔╝███████║   ██║   ██████╔╝╚██████╔╝   ██║   ╚██████╔╝██║  ██║██║ ╚═╝ ██║███████╗██║  ██║
- ╚═════╝  ╚═════╝ ╚══════╝   ╚═╝   ╚═════╝  ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝
+██████╗ ████████╗███████╗██████╗  ██████╗ ██████╗  █████╗  ██████╗████████╗██╗   ██╗██╗     
+██╔══██╗╚══██╔══╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔════╝╚══██╔══╝╚██╗ ██╔╝██║     
+██████╔╝   ██║   █████╗  ██║  ██║██║  ██║██████╔╝███████║██║        ██║    ╚████╔╝ ██║     
+██╔═══╝    ██║   ██╔══╝  ██║  ██║██║  ██║██╔══██╗██╔══██║██║        ██║     ╚██╔╝  ██║     
+██║        ██║   ███████╗██████╔╝╚██████╔╝██║  ██║██║  ██║╚██████╗   ██║      ██║   ███████╗
+╚═╝        ╚═╝   ╚══════╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝      ╚═╝   ╚══════╝
 EOF
     echo -e "${NC}"
     echo -e "${PURPLE}┌──────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${PURPLE}│${NC}  ${R}☢️  GOSTDTGAMER DEPLOYMENT SUITE${NC} ${DG}v1.0${NC}          ${DG}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
+    echo -e "${PURPLE}│${NC}  ${R}☢️  GOSTDTGAMER PTERODACTYL SUITE${NC} ${DG}v1.0${NC}          ${DG}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
     echo -e "${PURPLE}└──────────────────────────────────────────────────────────┘${NC}"
     echo -e "${DG}                   POWERED BY GOSTDTGAMER${NC}"
     echo ""
@@ -76,33 +79,22 @@ EOF
     echo -e "${Y}                    SYSTEM INFORMATION${NC}"
     echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
-    # CPU Info
     CPU_CORES=$(nproc)
     CPU_MODEL=$(lscpu | grep "Model name" | cut -d':' -f2 | xargs)
     echo -e "${DG}├─ CPU Cores      :${NC} ${W}$CPU_CORES${NC}"
     echo -e "${DG}├─ CPU Model      :${NC} ${W}$CPU_MODEL${NC}"
     
-    # RAM Info
     RAM_TOTAL=$(free -h | awk '/^Mem:/ {print $2}')
-    RAM_USED=$(free -h | awk '/^Mem:/ {print $3}')
-    RAM_FREE=$(free -h | awk '/^Mem:/ {print $4}')
     echo -e "${DG}├─ Total RAM      :${NC} ${W}$RAM_TOTAL${NC}"
-    echo -e "${DG}├─ Used RAM       :${NC} ${W}$RAM_USED${NC}"
-    echo -e "${DG}├─ Free RAM       :${NC} ${W}$RAM_FREE${NC}"
     
-    # Disk Info
     DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
-    DISK_USED=$(df -h / | awk 'NR==2 {print $3}')
     DISK_FREE=$(df -h / | awk 'NR==2 {print $4}')
     echo -e "${DG}├─ Total Disk     :${NC} ${W}$DISK_TOTAL${NC}"
-    echo -e "${DG}├─ Used Disk      :${NC} ${W}$DISK_USED${NC}"
-    echo -e "${DG}└─ Free Disk      :${NC} ${W}$DISK_FREE${NC}"
+    echo -e "${DG}├─ Free Disk      :${NC} ${W}$DISK_FREE${NC}"
     
-    # OS Info
     echo -e "${DG}├─ OS             :${NC} ${W}$OS $VER${NC}"
     
-    # IP Info
-    IP_PUBLIC=$(curl -s ifconfig.me || echo "Not available")
+    IP_PUBLIC=$(curl -s --max-time 5 ifconfig.me || echo "Not available")
     echo -e "${DG}└─ Public IP      :${NC} ${W}$IP_PUBLIC${NC}"
     echo -e "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
@@ -110,147 +102,311 @@ EOF
 
 update_system() {
     log "Updating system packages..."
-    apt-get update -y >> "$LOG_FILE" 2>&1
-    apt-get upgrade -y >> "$LOG_FILE" 2>&1
+    apt-get update -y 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    apt-get upgrade -y 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
     success "System updated"
 }
 
-install_node() {
-    log "Installing Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - >> "$LOG_FILE" 2>&1
-    apt-get install -y nodejs >> "$LOG_FILE" 2>&1
-    success "Node.js installed: $(node -v)"
+install_dependencies() {
+    log "Installing dependencies..."
+    
+    apt-get install -y curl wget git nginx mysql-server redis-server \
+        tar unzip zip gzip ca-certificates gnupg lsb-release \
+        software-properties-common 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Install PHP 8.2
+    echo -e "  ${DG}├─ Installing PHP 8.2...${NC}"
+    apt-get install -y php8.2 php8.2-cli php8.2-common php8.2-curl \
+        php8.2-gd php8.2-mysql php8.2-mbstring php8.2-bcmath php8.2-xml \
+        php8.2-fpm php8.2-zip php8.2-redis 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    # Install Docker for Wings
+    echo -e "  ${DG}├─ Installing Docker...${NC}"
+    curl -fsSL https://get.docker.com | sh 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    success "Dependencies installed"
 }
 
-install_tailscale() {
-    log "Installing Tailscale..."
-    curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG_FILE" 2>&1
+setup_mysql() {
+    log "Setting up MySQL database..."
+    
+    # Generate random passwords
+    MYSQL_ROOT_PASS=$(openssl rand -base64 16)
+    MYSQL_PTERO_PASS=$(openssl rand -base64 16)
+    
+    # Secure MySQL installation
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASS}';" 2>/dev/null || true
+    mysql -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
+    mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
+    mysql -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
+    mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';" 2>/dev/null || true
+    mysql -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+    
+    # Create Pterodactyl database
+    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "CREATE DATABASE IF NOT EXISTS panel;" 2>/dev/null || true
+    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "CREATE USER IF NOT EXISTS 'pterodactyl'@'127.0.0.1' IDENTIFIED BY '${MYSQL_PTERO_PASS}';" 2>/dev/null || true
+    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "GRANT ALL PRIVILEGES ON panel.* TO 'pterodactyl'@'127.0.0.1' WITH GRANT OPTION;" 2>/dev/null || true
+    mysql -u root -p"${MYSQL_ROOT_PASS}" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+    
+    # Save credentials
+    cat > /root/pterodactyl_db_credentials.txt << EOF
+MySQL Root Password: $MYSQL_ROOT_PASS
+Pterodactyl Database User: pterodactyl
+Pterodactyl Database Password: $MYSQL_PTERO_PASS
+Database Name: panel
+EOF
+    
+    success "MySQL configured"
+    echo -e "  ${Y}├─ Credentials saved to: /root/pterodactyl_db_credentials.txt${NC}"
+}
+
+install_pterodactyl_panel() {
+    log "Installing Pterodactyl Panel..."
+    
+    cd /var/www
+    curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz 2>&1 | tee -a "$LOG_FILE"
+    tar -xzvf panel.tar.gz 2>&1 | tee -a "$LOG_FILE"
+    chmod -R 755 storage/* bootstrap/cache/
+    
+    # Install Composer
+    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer 2>&1 | tee -a "$LOG_FILE"
+    
+    cd "$PTERO_DIR"
+    cp .env.example .env
+    composer install --no-dev --optimize-autoloader 2>&1 | tee -a "$LOG_FILE"
+    
+    # Generate key
+    php artisan key:generate --force
+    
+    # Configure database
+    php artisan p:environment:setup --author=admin@localhost --url=http://localhost --timezone=UTC --cache=redis --session=redis --queue=redis --redis-host=127.0.0.1 --redis-pass= --redis-port=6379
+    
+    php artisan p:environment:database --host=127.0.0.1 --port=3306 --database=panel --username=pterodactyl --password="${MYSQL_PTERO_PASS}"
+    
+    # Run migrations
+    php artisan migrate --seed --force
+    
+    # Create admin user
+    php artisan p:user:make --email=admin@localhost --username=admin --name-first=Admin --password=password123 --admin=1
+    
+    # Set permissions
+    chown -R www-data:www-data /var/www/pterodactyl/*
+    
+    # Setup queue worker
+    cat > /etc/systemd/system/pteroq.service << EOF
+[Unit]
+Description=Pterodactyl Queue Worker
+After=redis-server.service
+
+[Service]
+User=www-data
+Group=www-data
+Restart=always
+ExecStart=/usr/bin/php /var/www/pterodactyl/artisan queue:work --queue=high,standard,low --sleep=3 --tries=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl enable --now pteroq.service
+    
+    # Setup cron job
+    echo "* * * * * php /var/www/pterodactyl/artisan schedule:run >> /dev/null 2>&1" | crontab -
+    
+    success "Pterodactyl Panel installed"
+}
+
+configure_nginx() {
+    log "Configuring Nginx..."
+    
+    cat > /etc/nginx/sites-available/pterodactyl.conf << 'EOF'
+server {
+    listen 80;
+    server_name _;
+    root /var/www/pterodactyl/public;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOF
+    
+    ln -sf /etc/nginx/sites-available/pterodactyl.conf /etc/nginx/sites-enabled/pterodactyl.conf
+    rm -f /etc/nginx/sites-enabled/default
+    systemctl restart nginx
+    systemctl restart php8.2-fpm
+    
+    success "Nginx configured"
+}
+
+install_node_tailscale() {
+    log "Installing Node.js and Tailscale..."
+    
+    # Node.js
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - 2>&1 | tee -a "$LOG_FILE"
+    apt-get install -y nodejs 2>&1 | tee -a "$LOG_FILE"
+    success "Node.js installed: $(node -v)"
+    
+    # Tailscale
+    curl -fsSL https://tailscale.com/install.sh | sh 2>&1 | tee -a "$LOG_FILE"
     success "Tailscale installed"
     
     echo -e "\n  ${Y}Tailscale Setup${NC}"
-    echo -ne "  ${DG}├─ Do you want to start Tailscale? (y/n): ${NC}"
-    read -r start_tailscale
-    if [[ "$start_tailscale" == "y" ]]; then
-        echo -ne "  ${DG}├─ Enter Tailscale auth key (optional, press Enter for interactive): ${NC}"
-        read -r tailscale_key
-        if [[ -n "$tailscale_key" ]]; then
-            tailscale up --auth-key "$tailscale_key" >> "$LOG_FILE" 2>&1
+    echo -ne "  ${DG}├─ Start Tailscale? (y/n): ${NC}"
+    read -r start_ts
+    if [[ "$start_ts" == "y" ]]; then
+        echo -ne "  ${DG}├─ Auth key (optional): ${NC}"
+        read -r ts_key
+        if [[ -n "$ts_key" ]]; then
+            tailscale up --auth-key "$ts_key"
         else
-            tailscale up >> "$LOG_FILE" 2>&1
+            tailscale up
         fi
         success "Tailscale started"
-        tailscale status
     fi
 }
 
-install_cloudflared() {
+install_cloudflared_token() {
     log "Installing Cloudflared..."
     
-    # Add cloudflared repo
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >> "$LOG_FILE" 2>&1
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflared.list >> "$LOG_FILE" 2>&1
-    
-    apt-get update -y >> "$LOG_FILE" 2>&1
-    apt-get install -y cloudflared >> "$LOG_FILE" 2>&1
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >> "$LOG_FILE"
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflared.list
+    apt-get update -y >> "$LOG_FILE"
+    apt-get install -y cloudflared 2>&1 | tee -a "$LOG_FILE"
     
     success "Cloudflared installed"
     
     echo -e "\n  ${Y}Cloudflare Tunnel Setup${NC}"
-    echo -e "  ${DG}├─ You need to authenticate with Cloudflare${NC}"
-    echo -ne "  ${DG}├─ Press Enter to start Cloudflare authentication...${NC}"
+    echo -e "  ${DG}├─ You will need to authenticate with Cloudflare${NC}"
+    echo -ne "  ${DG}├─ Press Enter to start authentication...${NC}"
     read -r
     
     cloudflared tunnel login
     
-    echo -ne "\n  ${DG}├─ Enter tunnel name: ${NC}"
+    echo -ne "  ${DG}├─ Enter tunnel name: ${NC}"
     read -r tunnel_name
     
     cloudflared tunnel create "$tunnel_name"
     
-    echo -ne "  ${DG}├─ Enter hostname (e.g., example.com): ${NC}"
+    echo -ne "  ${DG}├─ Enter hostname (e.g., panel.example.com): ${NC}"
     read -r hostname
     
     cloudflared tunnel route dns "$tunnel_name" "$hostname"
     
-    mkdir -p ~/.cloudflared
-    cat > ~/.cloudflared/config.yml << EOF
+    mkdir -p /root/.cloudflared
+    cat > /root/.cloudflared/config.yml << EOF
 tunnel: $tunnel_name
 credentials-file: /root/.cloudflared/${tunnel_name}.json
 
 ingress:
   - hostname: $hostname
-    service: http://localhost:8080
+    service: http://localhost:80
   - service: http_status:404
 EOF
     
-    echo -e "  ${G}✓ Cloudflare tunnel configured!${NC}"
-    echo -e "  ${DG}└─ Run: ${W}cloudflared tunnel run $tunnel_name${NC}"
+    echo -e "\n  ${G}✓ Cloudflare tunnel configured!${NC}"
+    echo -e "  ${DG}├─ Run: ${W}cloudflared tunnel run $tunnel_name${NC}"
+    echo -e "  ${DG}└─ Or install as service: ${W}cloudflared service install${NC}"
 }
 
-install_parodactak() {
-    log "Installing Parodactak..."
+install_pterodactyl_wings() {
+    log "Installing Pterodactyl Wings..."
     
-    # Create installation directory
-    mkdir -p "$INSTALL_DIR"
-    cd "$INSTALL_DIR"
+    # Create wings user
+    useradd -r -d /var/lib/pterodactyl -m -s /bin/bash wings || true
     
-    # Clone or download Parodactak (adjust URL as needed)
-    if [[ -d "Parodactak" ]]; then
-        cd Parodactak
-        git pull >> "$LOG_FILE" 2>&1
-    else
-        git clone https://github.com/yourusername/parodactak.git Parodactak >> "$LOG_FILE" 2>&1 || {
-            error "Failed to clone Parodactak repository"
-        }
-        cd Parodactak
-    fi
+    # Create directories
+    mkdir -p /etc/pterodactyl /var/lib/pterodactyl/{tmp,archive,backups}
     
-    # Install dependencies
-    if [[ -f "package.json" ]]; then
-        npm install >> "$LOG_FILE" 2>&1
-        success "Parodactak installed with npm dependencies"
-    else
-        success "Parodactak files downloaded"
-    fi
+    # Download wings
+    curl -L -o /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64 2>&1 | tee -a "$LOG_FILE"
+    chmod u+x /usr/local/bin/wings
     
-    echo -e "\n  ${Y}Parodactak Setup Complete${NC}"
-    echo -e "  ${DG}├─ Location: ${W}$INSTALL_DIR/Parodactak${NC}"
-    echo -e "  ${DG}└─ Start with: ${W}cd $INSTALL_DIR/Parodactak && npm start${NC}"
-}
+    # Create systemd service
+    cat > /etc/systemd/system/wings.service << 'EOF'
+[Unit]
+Description=Pterodactyl Wings Daemon
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
 
-install_rdp() {
-    log "Installing RDP (X2Go) for remote desktop..."
+[Service]
+User=root
+WorkingDirectory=/etc/pterodactyl
+LimitNOFILE=4096
+PIDFile=/var/run/wings/daemon.pid
+ExecStart=/usr/local/bin/wings
+Restart=on-failure
+StartLimitInterval=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
     
-    apt-get install -y x2goserver x2goserver-xsession >> "$LOG_FILE" 2>&1
+    mkdir -p /var/run/wings
+    chown -R wings:wings /var/run/wings
     
-    # Install lightweight desktop environment
-    apt-get install -y xfce4 xfce4-goodies >> "$LOG_FILE" 2>&1
-    
-    success "RDP installed (X2Go server)"
-    
-    echo -e "\n  ${Y}RDP Information${NC}"
-    echo -e "  ${DG}├─ Desktop: XFCE4${NC}"
-    echo -e "  ${DG}├─ Port: 22 (SSH)${NC}"
-    echo -e "  ${DG}└─ Connect using X2Go client with SSH protocol${NC}"
+    success "Pterodactyl Wings installed"
+    echo -e "\n  ${Y}Wings Setup Required:${NC}"
+    echo -e "  ${DG}├─ After panel installation, get node configuration from panel${NC}"
+    echo -e "  ${DG}├─ Save config to: /etc/pterodactyl/config.yml${NC}"
+    echo -e "  ${DG}└─ Then start wings: ${W}systemctl start wings${NC}"
 }
 
 install_norfurch() {
-    log "Installing Norfurch (Monitoring Tool)..."
+    log "Installing Norfurch (Monitoring Tools)..."
     
-    # Install basic monitoring tools
-    apt-get install -y htop nmon iotop iftop >> "$LOG_FILE" 2>&1
+    apt-get install -y htop nmon iotop iftop netdata 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
     
-    # Install netdata for comprehensive monitoring
-    curl -fsSL https://my-netdata.io/kickstart.sh | sh >> "$LOG_FILE" 2>&1
+    # Install netdata if not available
+    if ! command -v netdata &> /dev/null; then
+        curl -fsSL https://my-netdata.io/kickstart.sh | sh 2>&1 | tee -a "$LOG_FILE"
+    fi
     
-    success "Norfurch monitoring tools installed"
+    success "Monitoring tools installed"
     
     echo -e "\n  ${Y}Monitoring Tools Available:${NC}"
     echo -e "  ${DG}├─ htop    : Interactive process viewer${NC}"
     echo -e "  ${DG}├─ nmon    : System performance monitor${NC}"
     echo -e "  ${DG}├─ iotop   : I/O monitoring${NC}"
     echo -e "  ${DG}├─ iftop   : Network bandwidth monitor${NC}"
-    echo -e "  ${DG}└─ netdata : Web-based monitoring at http://localhost:19999${NC}"
+    echo -e "  ${DG}└─ netdata : http://localhost:19999${NC}"
+}
+
+install_rdp() {
+    log "Installing RDP (X2Go)..."
+    
+    apt-get install -y x2goserver x2goserver-xsession xfce4 xfce4-goodies 2>&1 | tee -a "$LOG_FILE" | while read line; do
+        echo -e "  ${DG}│  ${NC}$line"
+    done
+    
+    success "RDP installed"
+    echo -e "\n  ${Y}RDP Info:${NC}"
+    echo -e "  ${DG}├─ Desktop: XFCE4${NC}"
+    echo -e "  ${DG}├─ Port: 22 (SSH)${NC}"
+    echo -e "  ${DG}└─ Connect with X2Go client${NC}"
 }
 
 main_menu() {
@@ -258,69 +414,91 @@ main_menu() {
     show_specs
     
     echo -e "\n${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${C}                    SELECT COMPONENTS TO INSTALL${NC}"
+    echo -e "${C}                    PTERODACTYL INSTALLATION MENU${NC}"
     echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "  ${G}1)${NC} Install Everything (Full Suite)"
-    echo -e "  ${G}2)${NC} Install Node.js"
-    echo -e "  ${G}3)${NC} Install Tailscale VPN"
-    echo -e "  ${G}4)${NC} Install Cloudflared (Cloudflare Tunnel)"
-    echo -e "  ${G}5)${NC} Install Parodactak"
-    echo -e "  ${G}6)${NC} Install RDP (X2Go Remote Desktop)"
-    echo -e "  ${G}7)${NC} Install Norfurch (Monitoring Tools)"
-    echo -e "  ${G}8)${NC} View System Specifications"
-    echo -e "  ${G}9)${NC} View Installation Log"
+    echo -e "  ${G}1)${NC} Install Everything (Full Pterodactyl Suite)"
+    echo -e "  ${G}2)${NC} Install Pterodactyl Panel Only"
+    echo -e "  ${G}3)${NC} Install Pterodactyl Wings Only"
+    echo -e "  ${G}4)${NC} Install Node.js"
+    echo -e "  ${G}5)${NC} Install Tailscale VPN"
+    echo -e "  ${G}6)${NC} Install Cloudflared (with token setup)"
+    echo -e "  ${G}7)${NC} Install RDP (Remote Desktop)"
+    echo -e "  ${G}8)${NC} Install Norfurch (Monitoring Tools)"
+    echo -e "  ${G}9)${NC} View System Specs"
+    echo -e "  ${G}10)${NC} View Installation Log"
     echo -e "  ${R}0)${NC} Exit"
     echo -e "${Y}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -ne "  ${W}Enter your choice [0-9]: ${NC}"
+    echo -ne "  ${W}Enter your choice [0-10]: ${NC}"
     read -r choice
     
     case $choice in
         1)
             update_system
-            install_node
-            install_tailscale
-            install_cloudflared
-            install_parodactak
+            install_dependencies
+            setup_mysql
+            install_pterodactyl_panel
+            configure_nginx
+            install_pterodactyl_wings
+            install_node_tailscale
+            install_cloudflared_token
             install_rdp
             install_norfurch
-            echo -e "\n${G}✓ Full installation completed!${NC}"
+            echo -e "\n${G}✓ Full Pterodactyl installation completed!${NC}"
+            echo -e "${Y}Panel Access: http://$(curl -s ifconfig.me)${NC}"
+            echo -e "${Y}Admin Login: admin@localhost / password123${NC}"
+            echo -e "${Y}DB Credentials: /root/pterodactyl_db_credentials.txt${NC}"
             ;;
         2)
             update_system
-            install_node
+            install_dependencies
+            setup_mysql
+            install_pterodactyl_panel
+            configure_nginx
+            echo -e "\n${G}✓ Pterodactyl Panel installed!${NC}"
+            echo -e "${Y}Access at: http://$(curl -s ifconfig.me)${NC}"
             ;;
         3)
             update_system
-            install_tailscale
+            install_dependencies
+            install_pterodactyl_wings
             ;;
         4)
             update_system
-            install_cloudflared
+            curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+            apt-get install -y nodejs
+            success "Node.js installed: $(node -v)"
             ;;
         5)
             update_system
-            install_parodactak
+            curl -fsSL https://tailscale.com/install.sh | sh
+            echo -ne "Start Tailscale? (y/n): "
+            read -r start_ts
+            if [[ "$start_ts" == "y" ]]; then
+                echo -ne "Auth key (optional): "
+                read -r ts_key
+                [[ -n "$ts_key" ]] && tailscale up --auth-key "$ts_key" || tailscale up
+            fi
             ;;
         6)
             update_system
-            install_rdp
+            install_cloudflared_token
             ;;
         7)
             update_system
-            install_norfurch
+            install_rdp
             ;;
         8)
+            update_system
+            install_norfurch
+            ;;
+        9)
             show_specs
-            echo -e "\n${W}Press Enter to continue...${NC}"
+            echo -e "\n${W}Press Enter...${NC}"
             read -r
             main_menu
             ;;
-        9)
-            if [[ -f "$LOG_FILE" ]]; then
-                less "$LOG_FILE"
-            else
-                echo -e "${Y}No log file found${NC}"
-            fi
+        10)
+            [[ -f "$LOG_FILE" ]] && less "$LOG_FILE" || echo "No log file"
             main_menu
             ;;
         0)
