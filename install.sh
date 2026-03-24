@@ -21,6 +21,7 @@ NC='\033[0m'
 LOG_FILE="/tmp/pterodactyl_install.log"
 MYSQL_ROOT_PASS=""
 MYSQL_PTERO_PASS=""
+HYPER_V1_PASS="312010"
 
 # Functions
 log() {
@@ -75,7 +76,7 @@ show_header() {
 EOF
     echo -e "${NC}"
     echo -e "${PURPLE}┌──────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${PURPLE}│${NC}  ${RED}☢️  GOSTDTGAMER PTERODACTYL SUITE${NC} ${GREEN}v1.0${NC}              ${CYAN}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
+    echo -e "${PURPLE}│${NC}  ${RED}☢️  GOSTDTGAMER PTERODACTYL SUITE${NC} ${GREEN}v2.0${NC}              ${CYAN}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
     echo -e "${PURPLE}└──────────────────────────────────────────────────────────┘${NC}"
     echo -e "${GREEN}                   POWERED BY GOSTDTGAMER${NC}"
     echo ""
@@ -284,91 +285,260 @@ EOF
     echo -e "  ${WHITE}└─ Then start wings: systemctl start wings${NC}"
 }
 
-# Install Node.js
-install_node() {
-    log "Installing Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - >> "$LOG_FILE" 2>&1
-    apt-get install -y nodejs >> "$LOG_FILE" 2>&1
-    success "Node.js installed: $(node -v)"
+# ==================== PTERODACTYL ADDONS ====================
+
+install_blueprint() {
+    echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${GREEN}📦 BLUEPRINT INSTALLER${NC}"
+    echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${RED}⚠️  COMING SOON!${NC}"
+    echo -e "  ${WHITE}Blueprint is a powerful extension system for Pterodactyl Panel${NC}"
+    echo -e "  ${WHITE}It allows you to install themes, addons, and custom configurations${NC}"
+    echo -e ""
+    echo -e "  ${YELLOW}Expected features:${NC}"
+    echo -e "  ${WHITE}├─ One-click theme installation${NC}"
+    echo -e "  ${WHITE}├─ Addon marketplace${NC}"
+    echo -e "  ${WHITE}├─ Custom egg management${NC}"
+    echo -e "  ${WHITE}└─ Easy updates and backups${NC}"
+    echo -e ""
+    echo -e "  ${GREEN}Stay tuned for the next update!${NC}"
 }
 
-# Uninstall Node.js
-uninstall_node() {
-    log "Uninstalling Node.js..."
-    apt-get remove -y nodejs >> "$LOG_FILE" 2>&1
-    apt-get autoremove -y >> "$LOG_FILE" 2>&1
-    rm -rf /usr/local/lib/node_modules
-    rm -rf ~/.npm
-    success "Node.js uninstalled"
+install_theme() {
+    echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${GREEN}🎨 PTERODACTYL THEMES${NC}"
+    echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${CYAN}Available Themes:${NC}"
+    echo -e "  ${GREEN}  [ 1 ]${NC} Nebula"
+    echo -e "  ${GREEN}  [ 2 ]${NC} Euphoria"
+    echo -e "  ${GREEN}  [ 3 ]${NC} BetterAdmin"
+    echo -e "  ${GREEN}  [ 4 ]${NC} Abysspurple"
+    echo -e "  ${GREEN}  [ 5 ]${NC} Amberabyss"
+    echo -e "  ${GREEN}  [ 6 ]${NC} Catppuccindactyl"
+    echo -e "  ${GREEN}  [ 7 ]${NC} Crimsonabyss"
+    echo -e "  ${GREEN}  [ 8 ]${NC} Emeraldabyss"
+    echo -e "  ${GREEN}  [ 9 ]${NC} Refreshtheme"
+    echo -e "  ${GREEN}  [10]${NC} slice"
+    echo -e "  ${YELLOW}  [11]${NC} Coming Soon"
+    echo -e "  ${YELLOW}  [12]${NC} Coming Soon"
+    echo -e "  ${YELLOW}  [13]${NC} Coming Soon"
+    echo -e "  ${YELLOW}  [14]${NC} Coming Soon"
+    echo -e "  ${YELLOW}  [15]${NC} Coming Soon"
+    echo -e "  ${YELLOW}  [16]${NC} Coming Soon"
+    echo ""
+    echo -ne "  ${WHITE}Select theme [1-16]: ${NC}"
+    read theme_choice
+    
+    case $theme_choice in
+        1|2|3|4|5|6|7|8|9|10)
+            echo -e "\n  ${RED}⚠️  Theme installation coming soon!${NC}"
+            echo -e "  ${YELLOW}This feature will be available in the next update${NC}"
+            ;;
+        11|12|13|14|15|16)
+            echo -e "\n  ${YELLOW}⏳ Coming Soon!${NC}"
+            echo -e "  ${WHITE}This theme is under development${NC}"
+            ;;
+        *)
+            echo -e "${RED}Invalid choice${NC}"
+            ;;
+    esac
 }
 
-# Install Tailscale
+install_addon() {
+    echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${GREEN}🔌 PTERODACTYL ADDONS${NC}"
+    echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${CYAN}Available Addons:${NC}"
+    echo -e "  ${GREEN}  [ 1 ]${NC} Server Transfer"
+    echo -e "  ${GREEN}  [ 2 ]${NC} Backup Manager"
+    echo -e "  ${GREEN}  [ 3 ]${NC} Resource Monitor"
+    echo -e "  ${GREEN}  [ 4 ]${NC} Discord Integration"
+    echo -e "  ${GREEN}  [ 5 ]${NC} Two-Factor Authentication"
+    echo -e "  ${YELLOW}  [ 6 ]${NC} Coming Soon"
+    echo -e "  ${YELLOW}  [ 7 ]${NC} Coming Soon"
+    echo -e "  ${YELLOW}  [ 8 ]${NC} Coming Soon"
+    echo ""
+    echo -ne "  ${WHITE}Select addon [1-8]: ${NC}"
+    read addon_choice
+    
+    case $addon_choice in
+        1|2|3|4|5)
+            echo -e "\n  ${RED}⚠️  Addon installation coming soon!${NC}"
+            echo -e "  ${YELLOW}This feature will be available in the next update${NC}"
+            ;;
+        6|7|8)
+            echo -e "\n  ${YELLOW}⏳ Coming Soon!${NC}"
+            echo -e "  ${WHITE}This addon is under development${NC}"
+            ;;
+        *)
+            echo -e "${RED}Invalid choice${NC}"
+            ;;
+    esac
+}
+
+# ==================== HYPER V1 THEME ====================
+
+hyper_v1_menu() {
+    echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${GREEN}🚀 HYPER V1 THEME${NC}"
+    echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${CYAN}This is a premium theme with advanced features!${NC}"
+    echo -e "  ${WHITE}Features:${NC}"
+    echo -e "  ${WHITE}├─ Modern dark/light mode${NC}"
+    echo -e "  ${WHITE}├─ Custom dashboard widgets${NC}"
+    echo -e "  ${WHITE}├─ Advanced resource graphs${NC}"
+    echo -e "  ${WHITE}├─ Mobile responsive design${NC}"
+    echo -e "  ${WHITE}└─ One-click theme switching${NC}"
+    echo ""
+    echo -ne "  ${YELLOW}Enter password to access Hyper V1: ${NC}"
+    read -s pass
+    echo ""
+    
+    if [[ "$pass" == "$HYPER_V1_PASS" ]]; then
+        echo -e "\n  ${GREEN}✓ Access granted!${NC}"
+        echo -e "\n  ${CYAN}Hyper V1 Theme Options:${NC}"
+        echo -e "  ${GREEN}  [ 1 ]${NC} Install Hyper V1 Theme"
+        echo -e "  ${GREEN}  [ 2 ]${NC} Configure Hyper V1 Settings"
+        echo -e "  ${GREEN}  [ 3 ]${NC} Preview Theme"
+        echo -e "  ${GREEN}  [ 4 ]${NC} Uninstall Theme"
+        echo ""
+        echo -ne "  ${WHITE}Select option: ${NC}"
+        read hyper_choice
+        
+        case $hyper_choice in
+            1)
+                echo -e "\n  ${YELLOW}Installing Hyper V1 Theme...${NC}"
+                echo -e "  ${RED}⚠️  Coming Soon!${NC}"
+                echo -e "  ${WHITE}Hyper V1 Theme will be available in the next update${NC}"
+                ;;
+            2)
+                echo -e "\n  ${YELLOW}Configuration coming soon!${NC}"
+                ;;
+            3)
+                echo -e "\n  ${CYAN}Preview: Hyper V1 Theme is a modern, sleek design${NC}"
+                echo -e "  ${WHITE}├─ Dashboard: Clean cards with animations${NC}"
+                echo -e "  ${WHITE}├─ Server List: Grid/List view toggle${NC}"
+                echo -e "  ${WHITE}└─ Resource Usage: Real-time graphs${NC}"
+                ;;
+            4)
+                echo -e "\n  ${YELLOW}Uninstall coming soon!${NC}"
+                ;;
+            *)
+                echo -e "${RED}Invalid choice${NC}"
+                ;;
+        esac
+    else
+        echo -e "\n  ${RED}✗ Access denied! Incorrect password.${NC}"
+    fi
+}
+
+# ==================== PTERODACTYL EXTRA MENU ====================
+
+pterodactyl_extras_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}           PTERODACTYL EXTRAS (Themes & Addons)${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  ${GREEN}1)${NC} Install Blueprint (Extension System) ${RED}[Coming Soon]${NC}"
+        echo -e "  ${GREEN}2)${NC} Install Themes ${RED}[Coming Soon]${NC}"
+        echo -e "  ${GREEN}3)${NC} Install Addons ${RED}[Coming Soon]${NC}"
+        echo -e "  ${GREEN}4)${NC} 🚀 Hyper V1 Theme (Premium) ${CYAN}[Password Protected]${NC}"
+        echo -e "  ${YELLOW}0)${NC} Back to Main Menu"
+        echo ""
+        echo -ne "${WHITE}Enter your choice [0-4]: ${NC}"
+        read choice
+        
+        case $choice in
+            1) install_blueprint ;;
+            2) install_theme ;;
+            3) install_addon ;;
+            4) hyper_v1_menu ;;
+            0) break ;;
+            *) echo -e "${RED}Invalid option${NC}"; sleep 1 ;;
+        esac
+        
+        echo -ne "\n${WHITE}Press Enter to continue...${NC}"
+        read
+    done
+}
+
+# ==================== TAILSCALE WITH AUTH KEY ====================
+
+install_tailscale_with_key() {
+    log "Installing Tailscale..."
+    curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG_FILE" 2>&1
+    success "Tailscale installed"
+    
+    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "  ${GREEN}🔐 TAILSCALE AUTH KEY SETUP${NC}"
+    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  ${WHITE}How to get your Auth Key:${NC}"
+    echo -e "  ${CYAN}1. Go to https://login.tailscale.com/admin/authkeys${NC}"
+    echo -e "  ${CYAN}2. Click 'Generate auth key'${NC}"
+    echo -e "  ${CYAN}3. Copy the key (starts with 'tskey-')${NC}"
+    echo ""
+    echo -ne "  ${GREEN}► Paste your Tailscale Auth Key: ${NC}"
+    read AUTH_KEY
+    
+    if [[ -z "$AUTH_KEY" ]]; then
+        echo -e "\n  ${RED}No auth key entered! Using interactive login.${NC}"
+        tailscale up
+    else
+        echo -e "\n  ${WHITE}Connecting with auth key...${NC}"
+        tailscale up --auth-key "$AUTH_KEY"
+        success "Tailscale connected with auth key!"
+        echo -e "\n  ${GREEN}Tailscale Status:${NC}"
+        tailscale status
+        echo -e "\n  ${GREEN}Your Tailscale IP: $(tailscale ip 2>/dev/null)${NC}"
+    fi
+}
+
 install_tailscale() {
     log "Installing Tailscale..."
     curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG_FILE" 2>&1
     success "Tailscale installed"
     
     echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}🔐 TAILSCALE AUTHENTICATION${NC}"
+    echo -e "  ${GREEN}🔐 TAILSCALE SETUP${NC}"
     echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "  ${WHITE}Click the link below to authenticate your Tailscale account:${NC}"
+    echo -e "  ${GREEN}1)${NC} Setup with Auth Key (Recommended)"
+    echo -e "  ${GREEN}2)${NC} Setup with Login Link"
     echo ""
-    echo -e "  ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -ne "  ${WHITE}Choose method [1-2]: ${NC}"
+    read method
     
-    tailscale up 2>&1 | tee /tmp/tailscale_output.txt
-    LOGIN_URL=$(grep -oP 'https://login.tailscale.com/a/[a-zA-Z0-9]+' /tmp/tailscale_output.txt || echo "")
-    
-    if [[ -n "$LOGIN_URL" ]]; then
+    if [[ "$method" == "1" ]]; then
+        install_tailscale_with_key
+    else
+        echo -e "\n  ${WHITE}Click the link below to authenticate:${NC}"
+        echo -e "  ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        tailscale up 2>&1 | tee /tmp/tailscale_output.txt
+        LOGIN_URL=$(grep -oP 'https://login.tailscale.com/a/[a-zA-Z0-9]+' /tmp/tailscale_output.txt || echo "https://login.tailscale.com")
         echo -e "  ${GREEN}👉 $LOGIN_URL${NC}"
-    else
-        echo -e "  ${GREEN}👉 https://login.tailscale.com${NC}"
-    fi
-    
-    echo -e "  ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "  ${YELLOW}Instructions:${NC}"
-    echo -e "  ${WHITE}1.${NC} Click the link above or copy it to your browser"
-    echo -e "  ${WHITE}2.${NC} Log in with your Google, Microsoft, or GitHub account"
-    echo -e "  ${WHITE}3.${NC} Click 'Connect' to add this device to your Tailscale network"
-    echo -e "  ${WHITE}4.${NC} Return here and press Enter to complete setup"
-    echo ""
-    
-    echo -ne "  ${GREEN}Press Enter after you've authenticated in your browser...${NC}"
-    read
-    
-    if tailscale status 2>&1 | grep -q "Connected"; then
-        success "Tailscale is now connected!"
-        echo -e "\n  ${GREEN}Tailscale Status:${NC}"
-        tailscale status
-        echo -e "\n  ${GREEN}Your Tailscale IP: $(tailscale ip 2>/dev/null)${NC}"
-    else
-        echo -e "\n  ${YELLOW}Waiting for authentication...${NC}"
-        tailscale up --accept-routes=true &
+        echo -e "  ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "\n  ${YELLOW}Instructions:${NC}"
+        echo -e "  ${WHITE}1.${NC} Click the link above"
+        echo -e "  ${WHITE}2.${NC} Log in with your account"
+        echo -e "  ${WHITE}3.${NC} Click 'Connect'"
+        echo -e "  ${WHITE}4.${NC} Return here and press Enter"
+        echo ""
         echo -ne "  ${GREEN}Press Enter after authentication...${NC}"
         read
         success "Tailscale setup completed!"
+        tailscale status
     fi
 }
 
-# Uninstall Tailscale
-uninstall_tailscale() {
-    log "Uninstalling Tailscale..."
-    
-    if command -v tailscale &> /dev/null; then
-        tailscale down >> "$LOG_FILE" 2>&1
-        systemctl stop tailscaled >> "$LOG_FILE" 2>&1
-    fi
-    
-    apt-get remove -y tailscale >> "$LOG_FILE" 2>&1
-    rm -rf /var/lib/tailscale /etc/tailscale ~/.cache/tailscale ~/.config/tailscale
-    rm -f /etc/apt/sources.list.d/tailscale.list
-    apt-get update >> "$LOG_FILE" 2>&1
-    
-    success "Tailscale uninstalled"
-}
+# ==================== CLOUDFLARED WITH TOKEN ====================
 
-# Install Cloudflared with Token
 install_cloudflared() {
     log "Installing Cloudflared..."
     
@@ -416,7 +586,6 @@ install_cloudflared() {
     
     echo -e "\n  ${WHITE}Setting up tunnel with your token...${NC}"
     
-    # Create systemd service with the token using the correct command
     cat > /etc/systemd/system/cloudflared-tunnel.service << EOF
 [Unit]
 Description=Cloudflare Tunnel
@@ -443,19 +612,44 @@ EOF
     if systemctl is-active --quiet cloudflared-tunnel; then
         success "✓ Cloudflare Tunnel is running!"
         echo -e "\n  ${GREEN}Your tunnel is now active and will auto-start on boot!${NC}"
-        echo -e "  ${WHITE}Status: systemctl status cloudflared-tunnel${NC}"
-        echo -e "  ${WHITE}Logs:   journalctl -u cloudflared-tunnel -f${NC}"
-        echo -e "  ${WHITE}Stop:   systemctl stop cloudflared-tunnel${NC}"
-        echo -e "  ${WHITE}Start:  systemctl start cloudflared-tunnel${NC}"
     else
-        echo -e "\n  ${RED}Failed to start tunnel. Checking logs...${NC}"
-        journalctl -u cloudflared-tunnel -n 10 --no-pager
-        echo -e "\n  ${YELLOW}Try running manually:${NC}"
+        echo -e "\n  ${RED}Failed to start tunnel. Try manually:${NC}"
         echo -e "  ${WHITE}cloudflared tunnel run --token \"$CLOUDFLARE_TOKEN\"${NC}"
     fi
 }
 
-# Uninstall Cloudflared
+# ==================== OTHER TOOLS ====================
+
+install_node() {
+    log "Installing Node.js..."
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - >> "$LOG_FILE" 2>&1
+    apt-get install -y nodejs >> "$LOG_FILE" 2>&1
+    success "Node.js installed: $(node -v)"
+}
+
+uninstall_node() {
+    log "Uninstalling Node.js..."
+    apt-get remove -y nodejs >> "$LOG_FILE" 2>&1
+    apt-get autoremove -y >> "$LOG_FILE" 2>&1
+    success "Node.js uninstalled"
+}
+
+uninstall_tailscale() {
+    log "Uninstalling Tailscale..."
+    
+    if command -v tailscale &> /dev/null; then
+        tailscale down >> "$LOG_FILE" 2>&1
+        systemctl stop tailscaled >> "$LOG_FILE" 2>&1
+    fi
+    
+    apt-get remove -y tailscale >> "$LOG_FILE" 2>&1
+    rm -rf /var/lib/tailscale /etc/tailscale
+    rm -f /etc/apt/sources.list.d/tailscale.list
+    apt-get update >> "$LOG_FILE" 2>&1
+    
+    success "Tailscale uninstalled"
+}
+
 uninstall_cloudflared() {
     log "Uninstalling Cloudflared..."
     
@@ -476,7 +670,6 @@ uninstall_cloudflared() {
     success "Cloudflared uninstalled"
 }
 
-# Show Cloudflared Status
 show_cloudflared_status() {
     echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
     echo -e "  ${GREEN}📊 CLOUDFLARED STATUS${NC}"
@@ -497,7 +690,6 @@ show_cloudflared_status() {
     fi
 }
 
-# Install RDP
 install_rdp() {
     log "Installing RDP (X2Go)..."
     apt-get install -y x2goserver x2goserver-xsession xfce4 xfce4-goodies >> "$LOG_FILE" 2>&1
@@ -508,7 +700,6 @@ install_rdp() {
     echo -e "  ${WHITE}└─ Connect using X2Go client with SSH protocol${NC}"
 }
 
-# Uninstall RDP
 uninstall_rdp() {
     log "Uninstalling RDP..."
     apt-get remove -y x2goserver x2goserver-xsession xfce4 xfce4-goodies >> "$LOG_FILE" 2>&1
@@ -516,7 +707,6 @@ uninstall_rdp() {
     success "RDP uninstalled"
 }
 
-# Install Norfurch
 install_norfurch() {
     log "Installing Norfurch (Monitoring Tools)..."
     apt-get install -y htop nmon iotop iftop >> "$LOG_FILE" 2>&1
@@ -530,7 +720,6 @@ install_norfurch() {
     echo -e "  ${WHITE}└─ netdata : http://localhost:19999${NC}"
 }
 
-# Uninstall Norfurch
 uninstall_norfurch() {
     log "Uninstalling monitoring tools..."
     apt-get remove -y htop nmon iotop iftop >> "$LOG_FILE" 2>&1
@@ -543,7 +732,8 @@ uninstall_norfurch() {
     success "Monitoring tools uninstalled"
 }
 
-# Node.js menu
+# ==================== MENUS ====================
+
 node_menu() {
     while true; do
         clear
@@ -576,7 +766,6 @@ node_menu() {
     done
 }
 
-# Tailscale menu
 tailscale_menu() {
     while true; do
         clear
@@ -593,7 +782,7 @@ tailscale_menu() {
         fi
         
         echo ""
-        echo -e "  ${GREEN}1)${NC} Install Tailscale"
+        echo -e "  ${GREEN}1)${NC} Install Tailscale (with Auth Key)"
         echo -e "  ${RED}2)${NC} Uninstall Tailscale"
         echo -e "  ${GREEN}3)${NC} Connect/Start"
         echo -e "  ${RED}4)${NC} Disconnect/Stop"
@@ -614,7 +803,6 @@ tailscale_menu() {
     done
 }
 
-# Cloudflared menu
 cloudflared_menu() {
     while true; do
         clear
@@ -658,7 +846,6 @@ cloudflared_menu() {
     done
 }
 
-# RDP menu
 rdp_menu() {
     while true; do
         clear
@@ -691,7 +878,6 @@ rdp_menu() {
     done
 }
 
-# Norfurch menu
 norfurch_menu() {
     while true; do
         clear
@@ -724,7 +910,8 @@ norfurch_menu() {
     done
 }
 
-# Main menu
+# ==================== MAIN MENU ====================
+
 main_menu() {
     while true; do
         show_header
@@ -736,20 +923,21 @@ main_menu() {
         echo -e "  ${GREEN}1)${NC} Install Everything (Full Pterodactyl Suite)"
         echo -e "  ${GREEN}2)${NC} Install Pterodactyl Panel Only"
         echo -e "  ${GREEN}3)${NC} Install Pterodactyl Wings Only"
+        echo -e "  ${GREEN}4)${NC} 🎨 Pterodactyl Extras (Themes, Blueprint, Addons)"
         echo ""
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${YELLOW}                    ADDITIONAL TOOLS${NC}"
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "  ${GREEN}4)${NC} 📦 Node.js Manager"
-        echo -e "  ${GREEN}5)${NC} 🔒 Tailscale VPN Manager"
-        echo -e "  ${GREEN}6)${NC} ☁️  Cloudflared Manager"
-        echo -e "  ${GREEN}7)${NC} 🖥️  RDP Manager"
-        echo -e "  ${GREEN}8)${NC} 📊 Norfurch Manager"
+        echo -e "  ${GREEN}5)${NC} 📦 Node.js Manager"
+        echo -e "  ${GREEN}6)${NC} 🔒 Tailscale VPN Manager (with Auth Key)"
+        echo -e "  ${GREEN}7)${NC} ☁️  Cloudflared Manager (with Token)"
+        echo -e "  ${GREEN}8)${NC} 🖥️  RDP Manager"
+        echo -e "  ${GREEN}9)${NC} 📊 Norfurch Manager"
         echo ""
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "  ${RED}0)${NC} Exit"
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -ne "${WHITE}Enter your choice [0-8]: ${NC}"
+        echo -ne "${WHITE}Enter your choice [0-9]: ${NC}"
         read choice
         
         case $choice in
@@ -781,11 +969,12 @@ main_menu() {
                 install_dependencies
                 install_pterodactyl_wings
                 ;;
-            4) node_menu ;;
-            5) tailscale_menu ;;
-            6) cloudflared_menu ;;
-            7) rdp_menu ;;
-            8) norfurch_menu ;;
+            4) pterodactyl_extras_menu ;;
+            5) node_menu ;;
+            6) tailscale_menu ;;
+            7) cloudflared_menu ;;
+            8) rdp_menu ;;
+            9) norfurch_menu ;;
             0) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
             *) echo -e "${RED}Invalid option${NC}"; sleep 2 ;;
         esac
