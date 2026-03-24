@@ -22,6 +22,7 @@ LOG_FILE="/tmp/pterodactyl_install.log"
 MYSQL_ROOT_PASS=""
 MYSQL_PTERO_PASS=""
 HYPER_V1_PASS="312010"
+PTERO_DIR="/var/www/pterodactyl"
 
 # Functions
 log() {
@@ -285,98 +286,255 @@ EOF
     echo -e "  ${WHITE}└─ Then start wings: systemctl start wings${NC}"
 }
 
-# ==================== PTERODACTYL ADDONS ====================
+# ==================== BLUEPRINT INSTALL ====================
 
 install_blueprint() {
+    log "Installing Blueprint..."
+    
     echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "  ${GREEN}📦 BLUEPRINT INSTALLER${NC}"
+    echo -e "  ${GREEN}📦 INSTALLING BLUEPRINT${NC}"
     echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${RED}⚠️  COMING SOON!${NC}"
-    echo -e "  ${WHITE}Blueprint is a powerful extension system for Pterodactyl Panel${NC}"
-    echo -e "  ${WHITE}It allows you to install themes, addons, and custom configurations${NC}"
-    echo -e ""
-    echo -e "  ${YELLOW}Expected features:${NC}"
-    echo -e "  ${WHITE}├─ One-click theme installation${NC}"
-    echo -e "  ${WHITE}├─ Addon marketplace${NC}"
-    echo -e "  ${WHITE}├─ Custom egg management${NC}"
-    echo -e "  ${WHITE}└─ Easy updates and backups${NC}"
-    echo -e ""
-    echo -e "  ${GREEN}Stay tuned for the next update!${NC}"
+    
+    # Check if Pterodactyl is installed
+    if [[ ! -d "$PTERO_DIR" ]]; then
+        echo -e "  ${RED}Error: Pterodactyl Panel not found! Please install Pterodactyl first.${NC}"
+        return 1
+    fi
+    
+    cd $PTERO_DIR
+    
+    # Download Blueprint
+    echo -e "  ${WHITE}Downloading Blueprint...${NC}"
+    curl -L -o blueprint.tar.gz https://github.com/BlueprintFramework/framework/releases/latest/download/blueprint.tar.gz
+    tar -xzvf blueprint.tar.gz
+    
+    # Install Blueprint
+    echo -e "  ${WHITE}Installing Blueprint...${NC}"
+    chmod +x blueprint.sh
+    ./blueprint.sh install
+    
+    success "Blueprint installed successfully!"
+    echo -e "\n  ${GREEN}Blueprint is now installed!${NC}"
+    echo -e "  ${WHITE}Access Blueprint at: ${CYAN}http://$(curl -s ifconfig.me)/blueprint${NC}"
 }
 
-install_theme() {
+# ==================== NEBULA THEME INSTALL ====================
+
+install_nebula_theme() {
+    log "Installing Nebula Theme..."
+    
     echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "  ${GREEN}🎨 PTERODACTYL THEMES${NC}"
+    echo -e "  ${GREEN}🌌 INSTALLING NEBULA THEME${NC}"
     echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${CYAN}Available Themes:${NC}"
-    echo -e "  ${GREEN}  [ 1 ]${NC} Nebula"
-    echo -e "  ${GREEN}  [ 2 ]${NC} Euphoria"
-    echo -e "  ${GREEN}  [ 3 ]${NC} BetterAdmin"
-    echo -e "  ${GREEN}  [ 4 ]${NC} Abysspurple"
-    echo -e "  ${GREEN}  [ 5 ]${NC} Amberabyss"
-    echo -e "  ${GREEN}  [ 6 ]${NC} Catppuccindactyl"
-    echo -e "  ${GREEN}  [ 7 ]${NC} Crimsonabyss"
-    echo -e "  ${GREEN}  [ 8 ]${NC} Emeraldabyss"
-    echo -e "  ${GREEN}  [ 9 ]${NC} Refreshtheme"
-    echo -e "  ${GREEN}  [10]${NC} slice"
-    echo -e "  ${YELLOW}  [11]${NC} Coming Soon"
-    echo -e "  ${YELLOW}  [12]${NC} Coming Soon"
-    echo -e "  ${YELLOW}  [13]${NC} Coming Soon"
-    echo -e "  ${YELLOW}  [14]${NC} Coming Soon"
-    echo -e "  ${YELLOW}  [15]${NC} Coming Soon"
-    echo -e "  ${YELLOW}  [16]${NC} Coming Soon"
-    echo ""
-    echo -ne "  ${WHITE}Select theme [1-16]: ${NC}"
-    read theme_choice
     
-    case $theme_choice in
-        1|2|3|4|5|6|7|8|9|10)
-            echo -e "\n  ${RED}⚠️  Theme installation coming soon!${NC}"
-            echo -e "  ${YELLOW}This feature will be available in the next update${NC}"
-            ;;
-        11|12|13|14|15|16)
-            echo -e "\n  ${YELLOW}⏳ Coming Soon!${NC}"
-            echo -e "  ${WHITE}This theme is under development${NC}"
-            ;;
-        *)
-            echo -e "${RED}Invalid choice${NC}"
-            ;;
-    esac
+    # Check if Pterodactyl is installed
+    if [[ ! -d "$PTERO_DIR" ]]; then
+        echo -e "  ${RED}Error: Pterodactyl Panel not found! Please install Pterodactyl first.${NC}"
+        return 1
+    fi
+    
+    cd $PTERO_DIR
+    
+    # Backup current theme
+    echo -e "  ${WHITE}Creating backup...${NC}"
+    cp -r resources/views resources/views.backup
+    cp -r public/themes public/themes.backup
+    
+    # Download Nebula Theme
+    echo -e "  ${WHITE}Downloading Nebula Theme...${NC}"
+    curl -L -o nebula.zip https://github.com/WilliamTeder/nebula/releases/latest/download/nebula.zip
+    unzip -o nebula.zip
+    
+    # Install Nebula dependencies
+    echo -e "  ${WHITE}Installing dependencies...${NC}"
+    npm install
+    npm run production
+    
+    # Install Nebula
+    echo -e "  ${WHITE}Installing Nebula Theme...${NC}"
+    php artisan nebula:install
+    
+    # Clear cache
+    php artisan view:clear
+    php artisan cache:clear
+    
+    success "Nebula Theme installed successfully!"
+    echo -e "\n  ${GREEN}Nebula Theme is now active!${NC}"
+    echo -e "  ${WHITE}You can configure it in Panel Settings -> Theme${NC}"
 }
 
-install_addon() {
-    echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "  ${GREEN}🔌 PTERODACTYL ADDONS${NC}"
-    echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "  ${CYAN}Available Addons:${NC}"
-    echo -e "  ${GREEN}  [ 1 ]${NC} Server Transfer"
-    echo -e "  ${GREEN}  [ 2 ]${NC} Backup Manager"
-    echo -e "  ${GREEN}  [ 3 ]${NC} Resource Monitor"
-    echo -e "  ${GREEN}  [ 4 ]${NC} Discord Integration"
-    echo -e "  ${GREEN}  [ 5 ]${NC} Two-Factor Authentication"
-    echo -e "  ${YELLOW}  [ 6 ]${NC} Coming Soon"
-    echo -e "  ${YELLOW}  [ 7 ]${NC} Coming Soon"
-    echo -e "  ${YELLOW}  [ 8 ]${NC} Coming Soon"
-    echo ""
-    echo -ne "  ${WHITE}Select addon [1-8]: ${NC}"
-    read addon_choice
+# ==================== ADDONS INSTALL ====================
+
+install_addon_server_transfer() {
+    log "Installing Server Transfer Addon..."
     
-    case $addon_choice in
-        1|2|3|4|5)
-            echo -e "\n  ${RED}⚠️  Addon installation coming soon!${NC}"
-            echo -e "  ${YELLOW}This feature will be available in the next update${NC}"
-            ;;
-        6|7|8)
-            echo -e "\n  ${YELLOW}⏳ Coming Soon!${NC}"
-            echo -e "  ${WHITE}This addon is under development${NC}"
-            ;;
-        *)
-            echo -e "${RED}Invalid choice${NC}"
-            ;;
-    esac
+    cd $PTERO_DIR
+    
+    echo -e "  ${WHITE}Installing Server Transfer Addon...${NC}"
+    
+    # Download Server Transfer Addon
+    curl -L -o servertransfer.zip https://github.com/pterodactyl-china/Server-Transfer/archive/refs/heads/main.zip
+    unzip -o servertransfer.zip
+    mv Server-Transfer-main/* .
+    
+    # Install via composer
+    composer require pterodactyl-china/server-transfer
+    
+    # Run migrations
+    php artisan migrate
+    
+    # Publish assets
+    php artisan vendor:publish --provider="PterodactylChina\ServerTransfer\ServerTransferServiceProvider"
+    
+    success "Server Transfer Addon installed!"
+}
+
+install_addon_backup_manager() {
+    log "Installing Backup Manager Addon..."
+    
+    cd $PTERO_DIR
+    
+    echo -e "  ${WHITE}Installing Backup Manager Addon...${NC}"
+    
+    # Download Backup Manager
+    curl -L -o backupmanager.zip https://github.com/pterodactyl/panel-backups/archive/refs/heads/main.zip
+    unzip -o backupmanager.zip
+    mv panel-backups-main/* .
+    
+    # Install via composer
+    composer require pterodactyl/panel-backups
+    
+    # Run migrations
+    php artisan migrate
+    
+    success "Backup Manager Addon installed!"
+}
+
+install_addon_resource_monitor() {
+    log "Installing Resource Monitor Addon..."
+    
+    cd $PTERO_DIR
+    
+    echo -e "  ${WHITE}Installing Resource Monitor Addon...${NC}"
+    
+    # Download Resource Monitor
+    curl -L -o resourcemonitor.zip https://github.com/AdrianKoshka/resource-monitor/archive/refs/heads/main.zip
+    unzip -o resourcemonitor.zip
+    mv resource-monitor-main/* .
+    
+    # Install via composer
+    composer require adriankoshka/resource-monitor
+    
+    # Run migrations
+    php artisan migrate
+    
+    success "Resource Monitor Addon installed!"
+}
+
+install_addon_discord_integration() {
+    log "Installing Discord Integration Addon..."
+    
+    cd $PTERO_DIR
+    
+    echo -e "  ${WHITE}Installing Discord Integration Addon...${NC}"
+    
+    # Download Discord Integration
+    curl -L -o discordint.zip https://github.com/Avisi-/Pterodactyl-Discord-Integration/archive/refs/heads/master.zip
+    unzip -o discordint.zip
+    mv Pterodactyl-Discord-Integration-master/* .
+    
+    # Install via composer
+    composer require avisi/pterodactyl-discord-integration
+    
+    # Run migrations
+    php artisan migrate
+    
+    success "Discord Integration Addon installed!"
+}
+
+install_addon_2fa() {
+    log "Installing Two-Factor Authentication Addon..."
+    
+    cd $PTERO_DIR
+    
+    echo -e "  ${WHITE}Installing 2FA Addon...${NC}"
+    
+    # Enable 2FA
+    php artisan p:user:2fa
+    
+    success "Two-Factor Authentication Addon installed!"
+}
+
+# ==================== ADDONS MENU ====================
+
+addons_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}                    PTERODACTYL ADDONS${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  ${GREEN}1)${NC} Server Transfer Addon"
+        echo -e "  ${GREEN}2)${NC} Backup Manager Addon"
+        echo -e "  ${GREEN}3)${NC} Resource Monitor Addon"
+        echo -e "  ${GREEN}4)${NC} Discord Integration Addon"
+        echo -e "  ${GREEN}5)${NC} Two-Factor Authentication Addon"
+        echo -e "  ${YELLOW}0)${NC} Back"
+        echo ""
+        echo -ne "${WHITE}Select addon to install: ${NC}"
+        read addon_choice
+        
+        case $addon_choice in
+            1) install_addon_server_transfer ;;
+            2) install_addon_backup_manager ;;
+            3) install_addon_resource_monitor ;;
+            4) install_addon_discord_integration ;;
+            5) install_addon_2fa ;;
+            0) break ;;
+            *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
+        esac
+        
+        echo -ne "\n${WHITE}Press Enter to continue...${NC}"
+        read
+    done
+}
+
+# ==================== THEMES MENU ====================
+
+themes_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}                    PTERODACTYL THEMES${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  ${GREEN}  [ 1 ]${NC} Nebula Theme ${CYAN}(Working)${NC}"
+        echo -e "  ${YELLOW}  [ 2 ]${NC} Euphoria ${RED}(Coming Soon)${NC}"
+        echo -e "  ${YELLOW}  [ 3 ]${NC} BetterAdmin ${RED}(Coming Soon)${NC}"
+        echo -e "  ${YELLOW}  [ 4 ]${NC} Abysspurple ${RED}(Coming Soon)${NC}"
+        echo -e "  ${YELLOW}  [ 5 ]${NC} Amberabyss ${RED}(Coming Soon)${NC}"
+        echo -e "  ${YELLOW}  [ 6 ]${NC} Catppuccindactyl ${RED}(Coming Soon)${NC}"
+        echo -e "  ${YELLOW}  [ 7 ]${NC} Crimsonabyss ${RED}(Coming Soon)${NC}"
+        echo -e "  ${YELLOW}  [ 8 ]${NC} Emeraldabyss ${RED}(Coming Soon)${NC}"
+        echo -e "  ${YELLOW}  [ 9 ]${NC} Refreshtheme ${RED}(Coming Soon)${NC}"
+        echo -e "  ${YELLOW}  [10]${NC} slice ${RED}(Coming Soon)${NC}"
+        echo -e "  ${YELLOW}  [11-16]${NC} More themes coming soon..."
+        echo ""
+        echo -ne "${WHITE}Select theme to install [1-16]: ${NC}"
+        read theme_choice
+        
+        case $theme_choice in
+            1) install_nebula_theme ;;
+            2|3|4|5|6|7|8|9|10|11|12|13|14|15|16)
+                echo -e "\n  ${RED}⚠️  Theme coming soon!${NC}"
+                echo -e "  ${YELLOW}This theme will be available in the next update${NC}"
+                sleep 2
+                ;;
+            *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
+        esac
+    done
 }
 
 # ==================== HYPER V1 THEME ====================
@@ -436,7 +594,7 @@ hyper_v1_menu() {
     fi
 }
 
-# ==================== PTERODACTYL EXTRA MENU ====================
+# ==================== PTERODACTYL EXTRAS MENU ====================
 
 pterodactyl_extras_menu() {
     while true; do
@@ -445,9 +603,9 @@ pterodactyl_extras_menu() {
         echo -e "${YELLOW}           PTERODACTYL EXTRAS (Themes & Addons)${NC}"
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
-        echo -e "  ${GREEN}1)${NC} Install Blueprint (Extension System) ${RED}[Coming Soon]${NC}"
-        echo -e "  ${GREEN}2)${NC} Install Themes ${RED}[Coming Soon]${NC}"
-        echo -e "  ${GREEN}3)${NC} Install Addons ${RED}[Coming Soon]${NC}"
+        echo -e "  ${GREEN}1)${NC} Install Blueprint (Extension System) ${CYAN}[Working]${NC}"
+        echo -e "  ${GREEN}2)${NC} Install Themes ${CYAN}[Nebula Working, More Coming]${NC}"
+        echo -e "  ${GREEN}3)${NC} Install Addons ${CYAN}[Working]${NC}"
         echo -e "  ${GREEN}4)${NC} 🚀 Hyper V1 Theme (Premium) ${CYAN}[Password Protected]${NC}"
         echo -e "  ${YELLOW}0)${NC} Back to Main Menu"
         echo ""
@@ -456,8 +614,8 @@ pterodactyl_extras_menu() {
         
         case $choice in
             1) install_blueprint ;;
-            2) install_theme ;;
-            3) install_addon ;;
+            2) themes_menu ;;
+            3) addons_menu ;;
             4) hyper_v1_menu ;;
             0) break ;;
             *) echo -e "${RED}Invalid option${NC}"; sleep 1 ;;
@@ -923,7 +1081,7 @@ main_menu() {
         echo -e "  ${GREEN}1)${NC} Install Everything (Full Pterodactyl Suite)"
         echo -e "  ${GREEN}2)${NC} Install Pterodactyl Panel Only"
         echo -e "  ${GREEN}3)${NC} Install Pterodactyl Wings Only"
-        echo -e "  ${GREEN}4)${NC} 🎨 Pterodactyl Extras (Themes, Blueprint, Addons)"
+        echo -e "  ${GREEN}4)${NC} 🎨 Pterodactyl Extras (Blueprint, Themes, Addons)"
         echo ""
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${YELLOW}                    ADDITIONAL TOOLS${NC}"
