@@ -423,7 +423,7 @@ uninstall_tailscale() {
     echo -e "  ${GREEN}✓ Tailscale removed from system${NC}"
 }
 
-# Install Cloudflared - THIS IS THE MAIN CLOUDFLARED INSTALL FUNCTION
+# Install Cloudflared with Token Setup - USING THE CORRECT INSTALLATION CODE
 install_cloudflared() {
     log "Installing Cloudflared..."
     
@@ -435,7 +435,7 @@ install_cloudflared() {
     # Step 1: Add cloudflare gpg key
     echo -e "  ${WHITE}[1/3] Adding Cloudflare GPG key...${NC}"
     mkdir -p --mode=0755 /usr/share/keyrings
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg | tee /usr/share/keyrings/cloudflare-public-v2.gpg > /dev/null
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg | tee /usr/share/keyrings/cloudflare-public-v2.gpg >/dev/null
     success "GPG key added"
     
     # Step 2: Add repository
@@ -445,8 +445,7 @@ install_cloudflared() {
     
     # Step 3: Install cloudflared
     echo -e "  ${WHITE}[3/3] Installing cloudflared...${NC}"
-    apt-get update >> "$LOG_FILE" 2>&1
-    apt-get install -y cloudflared >> "$LOG_FILE" 2>&1
+    apt-get update && apt-get install -y cloudflared >> "$LOG_FILE" 2>&1
     success "Cloudflared installed: $(cloudflared version)"
     
     echo -e "\n  ${GREEN}✓ Cloudflared installation complete!${NC}"
