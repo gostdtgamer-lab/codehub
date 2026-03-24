@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==========================================================
 # CODEHUB CLOUD SYSTEM | BANE-ANMESH 3S UPLINK
-# DATE: 2026-03-07 | UI-TYPE: SEMA-HYPER-VISUAL
+# DATE: 2026-03-25 | UI-TYPE: SEMA-HYPER-VISUAL
 # ==========================================================
 set -euo pipefail
 
@@ -16,8 +16,10 @@ PURPLE='\033[1;38;5;141m'
 NC='\033[0m'          # Reset
 
 # --- CONFIG ---
+# Change this to your actual server - use HTTP if HTTPS is not configured
+PROTOCOL="https"  # Change to "http" if SSL is not set up
 HOST="run.codehub.in"
-URL="https://${HOST}"
+URL="${PROTOCOL}://${HOST}"
 NETRC="${HOME}/.netrc"
 IP="65.0.86.121"
 LOCL_IP="10.1.0.29"
@@ -45,6 +47,7 @@ render_header
 
 # --- NETWORK DIAGNOSTICS SIDEBAR ---
 echo -e "  ${C}NETWORK ROUTE DIAGNOSTICS${NC}"
+echo -e "  ${DG}├─ Protocol        :${NC} ${W}${PROTOCOL}${NC}"
 echo -e "  ${DG}├─ Public Endpoint :${NC} ${W}$IP${NC}"
 echo -e "  ${DG}├─ Local Gateway   :${NC} ${W}$LOCL_IP${NC}"
 echo -e "  ${DG}├─ Target Host     :${NC} ${W}$HOST${NC}"
@@ -66,21 +69,51 @@ echo -ne "  ${DG}├─ Establishing Connection...${NC} "
 payload="$(mktemp)"
 trap "rm -f $payload" EXIT
 
-# Use silent curl with netrc
-if curl -fsSL -A "Bane-1s-Agent" --netrc -o "$payload" "$URL"; then
+# Check if curl is available
+if ! command -v curl &> /dev/null; then
+    echo -e "${R}FAILED${NC}"
+    echo -e "  ${DG}└─ Error Detail:${NC} ${R}curl not installed${NC}"
+    exit 1
+fi
+
+# Try multiple curl options to handle SSL issues
+CURL_OPTS=(-fsSL -A "Bane-1s-Agent" --netrc --connect-timeout 10)
+if [ "$PROTOCOL" = "https" ]; then
+    # Add SSL options to be more permissive
+    CURL_OPTS+=(-k)  # Skip SSL verification for testing
+    # Or use --ssl-no-revoke if needed
+    # CURL_OPTS+=(--ssl-no-revoke)
+fi
+
+if curl "${CURL_OPTS[@]}" -o "$payload" "$URL"; then
     echo -e "${G}CONNECTED${NC}"
     echo -e "  ${DG}└─ Agent Status:${NC} ${G}AUTHORIZED${NC}"
+    
+    # Check if payload is valid
+    if [ ! -s "$payload" ]; then
+        echo -e "  ${R}└─ Error: Empty payload received${NC}"
+        exit 1
+    fi
 
     echo -e "\n${DG}────────────────────────────────────────────────────────────${NC}"
     echo -ne "  ${W}Triggering execution in ${R}3s${NC} "
     for i in {1..3}; do echo -ne "${R}.${NC}"; sleep 1; done
     echo -e "\n"
 
-    # Execute payload
-    bash "$payload"
+    # Execute payload with error handling
+    if bash "$payload"; then
+        echo -e "${G}Execution completed successfully${NC}"
+    else
+        echo -e "${R}Execution failed with exit code $?${NC}"
+        exit 1
+    fi
 else
     echo -e "${R}FAILED${NC}"
     echo -e "  ${DG}└─ Error Detail:${NC} ${R}Connection Terminated by Host${NC}"
+    echo -e "\n  ${Y}[!] TROUBLESHOOTING:${NC}"
+    echo -e "  ${DG}├─ Try changing PROTOCOL to 'http' in the script${NC}"
+    echo -e "  ${DG}├─ Ensure the server ${W}$HOST${NC} ${DG}is reachable${NC}"
+    echo -e "  ${DG}└─ Check if the server has a valid SSL certificate${NC}"
     echo -e "\n  ${R}[!] CRITICAL:${NC} Authentication handshake failed."
     exit 1
 fi
