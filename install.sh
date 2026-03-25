@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==========================================================
 # GOSTDTGAMER PTERODACTYL PANEL INSTALLER
-# Fixed with PHP 8.2 support
+# Fixed download issues
 # ==========================================================
 
 set -e
@@ -64,9 +64,6 @@ install_php82() {
     add-apt-repository -y ppa:ondrej/php
     apt-get update -y
     
-    # Remove old PHP if exists
-    apt-get remove -y php* 2>/dev/null || true
-    
     # Install PHP 8.2 and required extensions
     apt-get install -y php8.2 php8.2-cli php8.2-common php8.2-curl \
         php8.2-gd php8.2-mysql php8.2-mbstring php8.2-bcmath php8.2-xml \
@@ -80,6 +77,45 @@ install_php82() {
     fi
     
     success "PHP 8.2 installed: $(php -v | head -1)"
+}
+
+# Download Pterodactyl Panel
+download_panel() {
+    echo -e "\n${WHITE}Downloading Pterodactyl Panel...${NC}"
+    
+    cd /var/www
+    
+    # Remove old files if they exist
+    rm -rf pterodactyl panel.tar.gz 2>/dev/null || true
+    
+    # Download using wget with retry
+    wget --tries=5 --timeout=30 -O panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz
+    
+    if [[ ! -f panel.tar.gz ]]; then
+        echo -e "${RED}Download failed! Trying alternative method...${NC}"
+        curl -L -o panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz
+    fi
+    
+    if [[ ! -f panel.tar.gz ]]; then
+        error "Failed to download panel. Check your internet connection."
+    fi
+    
+    # Extract
+    echo -e "${WHITE}Extracting...${NC}"
+    tar -xzf panel.tar.gz
+    
+    # Find extracted directory
+    EXTRACTED_DIR=$(find . -maxdepth 1 -type d -name "panel-*" | head -1)
+    
+    if [[ -z "$EXTRACTED_DIR" ]]; then
+        error "Extraction failed! No panel directory found."
+    fi
+    
+    # Move to pterodactyl directory
+    mv "$EXTRACTED_DIR" pterodactyl
+    rm -f panel.tar.gz
+    
+    success "Panel downloaded and extracted"
 }
 
 # Install Pterodactyl Panel
@@ -99,28 +135,28 @@ install_panel() {
     fi
     
     # Step 1: Update system
-    echo -e "\n${WHITE}[1/9] Updating system...${NC}"
+    echo -e "\n${WHITE}[1/10] Updating system...${NC}"
     apt-get update -y
     apt-get upgrade -y
     
     # Step 2: Install base dependencies
-    echo -e "\n${WHITE}[2/9] Installing base dependencies...${NC}"
+    echo -e "\n${WHITE}[2/10] Installing base dependencies...${NC}"
     apt-get install -y curl wget git nginx mysql-server redis-server \
         tar unzip zip gzip ca-certificates gnupg lsb-release \
         software-properties-common
     
     # Step 3: Install PHP 8.2
-    echo -e "\n${WHITE}[3/9] Installing PHP 8.2...${NC}"
+    echo -e "\n${WHITE}[3/10] Installing PHP 8.2...${NC}"
     install_php82
     
     # Step 4: Install Docker
-    echo -e "\n${WHITE}[4/9] Installing Docker...${NC}"
+    echo -e "\n${WHITE}[4/10] Installing Docker...${NC}"
     curl -fsSL https://get.docker.com | sh
     systemctl enable docker
     systemctl start docker
     
     # Step 5: Setup MySQL
-    echo -e "\n${WHITE}[5/9] Setting up MySQL...${NC}"
+    echo -e "\n${WHITE}[5/10] Setting up MySQL...${NC}"
     
     # Start MySQL if not running
     systemctl start mysql 2>/dev/null || true
@@ -152,29 +188,26 @@ EOF
     success "MySQL configured"
     
     # Step 6: Download Panel
-    echo -e "\n${WHITE}[6/9] Downloading Pterodactyl Panel...${NC}"
-    cd /var/www
-    rm -rf pterodactyl panel.tar.gz 2>/dev/null || true
-    curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz
-    tar -xzvf panel.tar.gz
-    rm panel.tar.gz
-    mv panel-* pterodactyl
-    cd pterodactyl
+    echo -e "\n${WHITE}[6/10] Downloading Pterodactyl Panel...${NC}"
+    download_panel
     
+    # Step 7: Setup Panel permissions
+    echo -e "\n${WHITE}[7/10] Setting permissions...${NC}"
+    cd /var/www/pterodactyl
     chmod -R 755 storage/* bootstrap/cache
     
-    # Step 7: Install Composer
-    echo -e "\n${WHITE}[7/9] Installing Composer...${NC}"
+    # Step 8: Install Composer
+    echo -e "\n${WHITE}[8/10] Installing Composer...${NC}"
     curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     cp .env.example .env
     
-    # Step 8: Install dependencies with PHP 8.2 check
-    echo -e "\n${WHITE}[8/9] Installing PHP dependencies...${NC}"
+    # Step 9: Install dependencies
+    echo -e "\n${WHITE}[9/10] Installing PHP dependencies...${NC}"
     export COMPOSER_ALLOW_SUPERUSER=1
     composer install --no-dev --optimize-autoloader --ignore-platform-reqs
     
-    # Step 9: Configure Panel
-    echo -e "\n${WHITE}[9/9] Configuring Panel...${NC}"
+    # Step 10: Configure Panel
+    echo -e "\n${WHITE}[10/10] Configuring Panel...${NC}"
     php artisan key:generate --force
     
     # Setup environment
@@ -327,39 +360,19 @@ EOF
     echo -e "  4. Copy the configuration and save to /etc/pterodactyl/config.yml"
     echo -e "  5. Run: systemctl start wings"
     echo ""
-    echo -ne "${WHITE}Do you want to configure Wings now? (y/n): ${NC}"
-    read config_now
+}
+
+# Fix PHP version
+fix_php_version() {
+    echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}🔧 FIXING PHP VERSION ISSUE${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
     
-    if [[ "$config_now" == "y" ]]; then
-        echo -ne "${WHITE}Enter Panel URL (e.g., https://panel.example.com): ${NC}"
-        read PANEL_URL
-        echo -ne "${WHITE}Enter Node UUID: ${NC}"
-        read NODE_UUID
-        echo -ne "${WHITE}Enter Node Token: ${NC}"
-        read NODE_TOKEN
-        
-        # Extract token parts
-        TOKEN_ID=$(echo "$NODE_TOKEN" | cut -d'.' -f1)
-        TOKEN_SECRET=$(echo "$NODE_TOKEN" | cut -d'.' -f2-)
-        
-        cat > /etc/pterodactyl/config.yml << EOF
-debug: false
-uuid: $NODE_UUID
-token_id: $TOKEN_ID
-token: $TOKEN_SECRET
-api:
-  host: $(echo "$PANEL_URL" | sed 's|https://||' | sed 's|http://||')
-  port: 443
-  ssl: true
-system:
-  data: /var/lib/pterodactyl/volumes
-  sftp:
-    bind_port: 2022
-EOF
-        
-        systemctl start wings
-        echo -e "${GREEN}✓ Wings configured and started!${NC}"
-    fi
+    install_php82
+    systemctl restart php8.2-fpm
+    
+    echo -e "\n${GREEN}PHP version fixed! Now you can install the panel.${NC}"
 }
 
 # Uninstall Panel
@@ -393,41 +406,7 @@ uninstall_panel() {
     mysql -e "DROP DATABASE IF EXISTS panel;" 2>/dev/null || true
     mysql -e "DROP USER IF EXISTS 'pterodactyl'@'127.0.0.1';" 2>/dev/null || true
     
-    echo -e "${WHITE}Removing PHP 8.2 (optional)...${NC}"
-    echo -ne "${YELLOW}Do you want to remove PHP 8.2 as well? (y/n): ${NC}"
-    read remove_php
-    if [[ "$remove_php" == "y" ]]; then
-        apt-get remove -y php8.2* 2>/dev/null || true
-        apt-get autoremove -y
-    fi
-    
     echo -e "${GREEN}✓ Pterodactyl uninstalled!${NC}"
-}
-
-# Fix PHP version (if error occurs)
-fix_php_version() {
-    echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}🔧 FIXING PHP VERSION ISSUE${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    
-    # Install PHP 8.2
-    install_php82
-    
-    # Update PHP-FPM
-    systemctl restart php8.2-fpm
-    
-    # Update composer dependencies with PHP 8.2
-    if [[ -d "/var/www/pterodactyl" ]]; then
-        cd /var/www/pterodactyl
-        composer install --no-dev --optimize-autoloader --ignore-platform-reqs
-        php artisan cache:clear
-        php artisan view:clear
-        php artisan config:clear
-        echo -e "${GREEN}✓ PHP dependencies updated!${NC}"
-    fi
-    
-    echo -e "\n${GREEN}PHP version fixed! Now you can install the panel.${NC}"
 }
 
 # Main menu
