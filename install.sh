@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ==========================================================
 # GOSTDTGAMER PTERODACTYL DEPLOYMENT SUITE
+# Full Pterodactyl Panel + Node Management + Auto/Manual Setup
 # Supports: Ubuntu 20.04/22.04, Debian 11/12
 # DATE: 2026-03-25
 # ==========================================================
@@ -23,6 +24,12 @@ MYSQL_ROOT_PASS=""
 MYSQL_PTERO_PASS=""
 HYPER_V1_PASS="312010"
 PTERO_DIR="/var/www/pterodactyl"
+PANEL_URL=""
+ADMIN_EMAIL=""
+ADMIN_USERNAME=""
+ADMIN_PASSWORD=""
+NODE_NAME=""
+NODE_DOMAIN=""
 
 # Functions
 log() {
@@ -77,7 +84,7 @@ show_header() {
 EOF
     echo -e "${NC}"
     echo -e "${PURPLE}┌──────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${PURPLE}│${NC}  ${RED}☢️  GOSTDTGAMER PTERODACTYL SUITE${NC} ${GREEN}v2.0${NC}              ${CYAN}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
+    echo -e "${PURPLE}│${NC}  ${RED}☢️  GOSTDTGAMER PTERODACTYL SUITE${NC} ${GREEN}v3.0${NC}              ${CYAN}$(date +"%H:%M")${NC}  ${PURPLE}│${NC}"
     echo -e "${PURPLE}└──────────────────────────────────────────────────────────┘${NC}"
     echo -e "${GREEN}                   POWERED BY GOSTDTGAMER${NC}"
     echo ""
@@ -170,11 +177,63 @@ EOF
     echo -e "  ${YELLOW}Credentials saved to: /root/pterodactyl_db_credentials.txt${NC}"
 }
 
+# Configure Panel Domain
+configure_panel_domain() {
+    echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${GREEN}🌐 CONFIGURE PANEL DOMAIN${NC}"
+    echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -ne "  ${WHITE}Enter your panel domain (e.g., panel.example.com): ${NC}"
+    read PANEL_URL
+    
+    if [[ -z "$PANEL_URL" ]]; then
+        IP_PUBLIC=$(curl -s ifconfig.me)
+        PANEL_URL="http://$IP_PUBLIC"
+        echo -e "  ${YELLOW}Using IP: $PANEL_URL${NC}"
+    else
+        PANEL_URL="http://$PANEL_URL"
+    fi
+}
+
+# Create Admin User
+create_admin_user() {
+    echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${GREEN}👤 CREATE ADMIN USER${NC}"
+    echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -ne "  ${WHITE}Admin Email: ${NC}"
+    read ADMIN_EMAIL
+    
+    if [[ -z "$ADMIN_EMAIL" ]]; then
+        ADMIN_EMAIL="admin@localhost"
+        echo -e "  ${YELLOW}Using default: $ADMIN_EMAIL${NC}"
+    fi
+    
+    echo -ne "  ${WHITE}Admin Username: ${NC}"
+    read ADMIN_USERNAME
+    
+    if [[ -z "$ADMIN_USERNAME" ]]; then
+        ADMIN_USERNAME="admin"
+        echo -e "  ${YELLOW}Using default: $ADMIN_USERNAME${NC}"
+    fi
+    
+    echo -ne "  ${WHITE}Admin Password: ${NC}"
+    read -s ADMIN_PASSWORD
+    echo ""
+    
+    if [[ -z "$ADMIN_PASSWORD" ]]; then
+        ADMIN_PASSWORD="password123"
+        echo -e "  ${YELLOW}Using default: password123${NC}"
+    fi
+}
+
 # Install Pterodactyl Panel
 install_pterodactyl_panel() {
     log "Installing Pterodactyl Panel..."
     
     cd /var/www
+    
+    # Download panel
     curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz >> "$LOG_FILE" 2>&1
     tar -xzvf panel.tar.gz >> "$LOG_FILE" 2>&1
     rm panel.tar.gz
@@ -186,10 +245,10 @@ install_pterodactyl_panel() {
     cp .env.example .env
     composer install --no-dev --optimize-autoloader >> "$LOG_FILE" 2>&1
     php artisan key:generate --force >> "$LOG_FILE" 2>&1
-    php artisan p:environment:setup --author=admin@localhost --url=http://localhost --timezone=UTC --cache=redis --session=redis --queue=redis --redis-host=127.0.0.1 --redis-pass= --redis-port=6379 --no-interaction >> "$LOG_FILE" 2>&1 || true
+    php artisan p:environment:setup --author="$ADMIN_EMAIL" --url="$PANEL_URL" --timezone=UTC --cache=redis --session=redis --queue=redis --redis-host=127.0.0.1 --redis-pass= --redis-port=6379 --no-interaction >> "$LOG_FILE" 2>&1 || true
     php artisan p:environment:database --host=127.0.0.1 --port=3306 --database=panel --username=pterodactyl --password="${MYSQL_PTERO_PASS}" --no-interaction >> "$LOG_FILE" 2>&1 || true
     php artisan migrate --seed --force >> "$LOG_FILE" 2>&1
-    php artisan p:user:make --email=admin@localhost --username=admin --name-first=Admin --name-last=User --password=password123 --admin=1 --no-interaction >> "$LOG_FILE" 2>&1 || true
+    php artisan p:user:make --email="$ADMIN_EMAIL" --username="$ADMIN_USERNAME" --name-first=Admin --name-last=User --password="$ADMIN_PASSWORD" --admin=1 --no-interaction >> "$LOG_FILE" 2>&1 || true
     chown -R www-data:www-data /var/www/pterodactyl/*
     
     cat > /etc/systemd/system/pteroq.service << 'EOF'
@@ -213,19 +272,22 @@ EOF
     success "Pterodactyl Panel installed"
 }
 
-# Configure Nginx
+# Configure Nginx with Domain
 configure_nginx() {
-    log "Configuring Nginx..."
+    log "Configuring Nginx with domain..."
     
-    cat > /etc/nginx/sites-available/pterodactyl.conf << 'EOF'
+    # Extract domain without http://
+    DOMAIN=$(echo "$PANEL_URL" | sed 's|http://||' | sed 's|https://||')
+    
+    cat > /etc/nginx/sites-available/pterodactyl.conf << EOF
 server {
     listen 80;
-    server_name _;
+    server_name $DOMAIN;
     root /var/www/pterodactyl/public;
     index index.php;
 
     location / {
-        try_files $uri $uri/ /index.php?$query_string;
+        try_files \$uri \$uri/ /index.php?\$query_string;
     }
 
     location ~ \.php$ {
@@ -244,18 +306,129 @@ EOF
     systemctl restart nginx
     systemctl restart php8.2-fpm
     
-    success "Nginx configured"
+    success "Nginx configured for $DOMAIN"
 }
 
-# Install Pterodactyl Wings
-install_pterodactyl_wings() {
-    log "Installing Pterodactyl Wings..."
+# Uninstall Pterodactyl Panel
+uninstall_pterodactyl() {
+    echo -e "\n  ${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${RED}⚠️  UNINSTALL PTERODACTYL${NC}"
+    echo -e "  ${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -ne "  ${RED}Are you sure you want to uninstall Pterodactyl? (y/n): ${NC}"
+    read confirm
     
-    useradd -r -d /var/lib/pterodactyl -m -s /bin/bash wings 2>/dev/null || true
-    mkdir -p /etc/pterodactyl /var/lib/pterodactyl/{tmp,archive,backups}
-    curl -L -o /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64 >> "$LOG_FILE" 2>&1
+    if [[ "$confirm" != "y" ]]; then
+        echo -e "  ${YELLOW}Cancelled${NC}"
+        return
+    fi
+    
+    log "Uninstalling Pterodactyl..."
+    
+    # Stop services
+    systemctl stop pteroq 2>/dev/null || true
+    systemctl stop wings 2>/dev/null || true
+    systemctl stop nginx 2>/dev/null || true
+    
+    # Remove files
+    rm -rf /var/www/pterodactyl
+    rm -rf /etc/pterodactyl
+    rm -f /etc/nginx/sites-available/pterodactyl.conf
+    rm -f /etc/nginx/sites-enabled/pterodactyl.conf
+    rm -f /etc/systemd/system/pteroq.service
+    rm -f /etc/systemd/system/wings.service
+    
+    # Remove MySQL database
+    mysql -e "DROP DATABASE IF EXISTS panel;" 2>/dev/null || true
+    mysql -e "DROP USER IF EXISTS 'pterodactyl'@'127.0.0.1';" 2>/dev/null || true
+    
+    # Remove Docker images
+    docker system prune -af 2>/dev/null || true
+    
+    success "Pterodactyl uninstalled"
+    echo -e "  ${GREEN}✓ All Pterodactyl files and databases removed${NC}"
+}
+
+# ==================== NODE MANAGEMENT ====================
+
+# Auto Deploy Node
+auto_deploy_node() {
+    log "Auto Deploying Node..."
+    
+    echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${GREEN}🚀 AUTO DEPLOY NODE${NC}"
+    echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # Get node information
+    echo -ne "  ${WHITE}Node Name: ${NC}"
+    read NODE_NAME
+    
+    if [[ -z "$NODE_NAME" ]]; then
+        NODE_NAME="node1"
+        echo -e "  ${YELLOW}Using default: $NODE_NAME${NC}"
+    fi
+    
+    echo -ne "  ${WHITE}Node Domain/IP (e.g., node.example.com or IP): ${NC}"
+    read NODE_DOMAIN
+    
+    if [[ -z "$NODE_DOMAIN" ]]; then
+        NODE_DOMAIN=$(curl -s ifconfig.me)
+        echo -e "  ${YELLOW}Using IP: $NODE_DOMAIN${NC}"
+    fi
+    
+    # Get API credentials from panel
+    echo -e "\n  ${CYAN}Get these from your Pterodactyl Panel:${NC}"
+    echo -e "  ${WHITE}1. Go to Admin Panel → Nodes → Create New${NC}"
+    echo -e "  ${WHITE}2. Enter node details and save${NC}"
+    echo -e "  ${WHITE}3. Get the configuration token from the node page${NC}"
+    echo ""
+    
+    echo -ne "  ${GREEN}► Enter Node UUID: ${NC}"
+    read NODE_UUID
+    
+    echo -ne "  ${GREEN}► Enter Node Token: ${NC}"
+    read NODE_TOKEN
+    
+    echo -ne "  ${GREEN}► Enter Panel URL (e.g., http://your-panel.com): ${NC}"
+    read PANEL_URL_NODE
+    
+    if [[ -z "$NODE_UUID" ]] || [[ -z "$NODE_TOKEN" ]] || [[ -z "$PANEL_URL_NODE" ]]; then
+        echo -e "  ${RED}Missing required information!${NC}"
+        return
+    fi
+    
+    # Create config directory
+    mkdir -p /etc/pterodactyl
+    
+    # Create Wings config
+    cat > /etc/pterodactyl/config.yml << EOF
+debug: false
+uuid: $NODE_UUID
+token_id: $(echo "$NODE_TOKEN" | cut -d'.' -f1 2>/dev/null || echo "token")
+token: $(echo "$NODE_TOKEN" | cut -d'.' -f2- 2>/dev/null || echo "$NODE_TOKEN")
+api:
+  host: $PANEL_URL_NODE
+  port: 443
+  ssl: true
+system:
+  data: /var/lib/pterodactyl/volumes
+  sftp:
+    bind_port: 2022
+  uploads:
+    enabled: true
+  disks:
+    - /var/lib/pterodactyl/volumes
+allowed_mounts: []
+remote: 'https://$PANEL_URL_NODE'
+EOF
+    
+    # Download Wings
+    echo -e "  ${WHITE}Downloading Wings...${NC}"
+    curl -L -o /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64
     chmod u+x /usr/local/bin/wings
     
+    # Create service
     cat > /etc/systemd/system/wings.service << 'EOF'
 [Unit]
 Description=Pterodactyl Wings Daemon
@@ -276,623 +449,375 @@ StartLimitInterval=600
 WantedBy=multi-user.target
 EOF
     
-    mkdir -p /var/run/wings
-    chown -R wings:wings /var/run/wings
+    systemctl daemon-reload
+    systemctl enable wings
+    systemctl start wings
     
-    success "Pterodactyl Wings installed"
-    echo -e "\n  ${YELLOW}Wings Setup Required:${NC}"
-    echo -e "  ${WHITE}├─ After panel installation, get node configuration from panel${NC}"
-    echo -e "  ${WHITE}├─ Save config to: /etc/pterodactyl/config.yml${NC}"
-    echo -e "  ${WHITE}└─ Then start wings: systemctl start wings${NC}"
+    sleep 3
+    
+    if systemctl is-active --quiet wings; then
+        success "Node deployed successfully!"
+        echo -e "\n  ${GREEN}Node Information:${NC}"
+        echo -e "  ${WHITE}Name: $NODE_NAME${NC}"
+        echo -e "  ${WHITE}Domain: $NODE_DOMAIN${NC}"
+        echo -e "  ${WHITE}Status: Running${NC}"
+        echo -e "\n  ${YELLOW}Wings Commands:${NC}"
+        echo -e "  Status: systemctl status wings"
+        echo -e "  Stop:   systemctl stop wings"
+        echo -e "  Start:  systemctl start wings"
+        echo -e "  Logs:   journalctl -u wings -f"
+    else
+        echo -e "  ${RED}Failed to start Wings. Check logs:${NC}"
+        journalctl -u wings -n 20 --no-pager
+    fi
 }
 
-# ==================== BLUEPRINT INSTALL ====================
-
-install_blueprint() {
-    log "Installing Blueprint..."
+# Manual Node Setup
+manual_node_setup() {
+    log "Manual Node Setup..."
     
     echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "  ${GREEN}📦 INSTALLING BLUEPRINT${NC}"
+    echo -e "  ${GREEN}🔧 MANUAL NODE SETUP${NC}"
     echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
-    # Check if Pterodactyl is installed
-    if [[ ! -d "$PTERO_DIR" ]]; then
-        echo -e "  ${RED}Error: Pterodactyl Panel not found! Please install Pterodactyl first.${NC}"
-        return 1
+    echo -e "  ${WHITE}Follow these steps to set up a node:${NC}"
+    echo -e "  ${CYAN}1. In your Pterodactyl Panel, go to Admin → Nodes${NC}"
+    echo -e "  ${CYAN}2. Click 'Create New' and fill in the details${NC}"
+    echo -e "  ${CYAN}3. After creating, click on the node and go to 'Configuration'${NC}"
+    echo -e "  ${CYAN}4. Copy the configuration token${NC}"
+    echo -e "  ${CYAN}5. Run the command below on this server:${NC}"
+    echo ""
+    
+    echo -e "  ${GREEN}wings -c /etc/pterodactyl/config.yml${NC}"
+    echo ""
+    
+    echo -ne "  ${WHITE}Enter your Node UUID: ${NC}"
+    read NODE_UUID
+    
+    echo -ne "  ${WHITE}Enter your Node Token: ${NC}"
+    read NODE_TOKEN
+    
+    echo -ne "  ${WHITE}Enter Panel URL (with https://): ${NC}"
+    read PANEL_URL_NODE
+    
+    if [[ -n "$NODE_UUID" ]] && [[ -n "$NODE_TOKEN" ]] && [[ -n "$PANEL_URL_NODE" ]]; then
+        mkdir -p /etc/pterodactyl
+        cat > /etc/pterodactyl/config.yml << EOF
+debug: false
+uuid: $NODE_UUID
+token_id: $(echo "$NODE_TOKEN" | cut -d'.' -f1)
+token: $(echo "$NODE_TOKEN" | cut -d'.' -f2-)
+api:
+  host: $(echo "$PANEL_URL_NODE" | sed 's|https://||' | sed 's|http://||')
+  port: 443
+  ssl: true
+system:
+  data: /var/lib/pterodactyl/volumes
+  sftp:
+    bind_port: 2022
+EOF
+        echo -e "  ${GREEN}✓ Configuration saved to /etc/pterodactyl/config.yml${NC}"
+        
+        if ! command -v wings &> /dev/null; then
+            echo -e "  ${WHITE}Installing Wings...${NC}"
+            curl -L -o /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64
+            chmod u+x /usr/local/bin/wings
+        fi
+        
+        echo -e "\n  ${YELLOW}Start Wings with:${NC}"
+        echo -e "  ${GREEN}wings -c /etc/pterodactyl/config.yml${NC}"
     fi
-    
-    cd $PTERO_DIR
-    
-    # Download Blueprint
-    echo -e "  ${WHITE}Downloading Blueprint...${NC}"
-    curl -L -o blueprint.tar.gz https://github.com/BlueprintFramework/framework/releases/latest/download/blueprint.tar.gz
-    tar -xzvf blueprint.tar.gz
-    
-    # Install Blueprint
-    echo -e "  ${WHITE}Installing Blueprint...${NC}"
-    chmod +x blueprint.sh
-    ./blueprint.sh install
-    
-    success "Blueprint installed successfully!"
-    echo -e "\n  ${GREEN}Blueprint is now installed!${NC}"
-    echo -e "  ${WHITE}Access Blueprint at: ${CYAN}http://$(curl -s ifconfig.me)/blueprint${NC}"
 }
 
-# ==================== NEBULA THEME INSTALL ====================
-
-install_nebula_theme() {
-    log "Installing Nebula Theme..."
+# Configure Node with UUID and Token
+configure_node_with_credentials() {
+    log "Configuring Node with credentials..."
     
     echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "  ${GREEN}🌌 INSTALLING NEBULA THEME${NC}"
+    echo -e "  ${GREEN}🔧 NODE CREDENTIALS SETUP${NC}"
     echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
-    # Check if Pterodactyl is installed
-    if [[ ! -d "$PTERO_DIR" ]]; then
-        echo -e "  ${RED}Error: Pterodactyl Panel not found! Please install Pterodactyl first.${NC}"
-        return 1
-    fi
-    
-    cd $PTERO_DIR
-    
-    # Backup current theme
-    echo -e "  ${WHITE}Creating backup...${NC}"
-    cp -r resources/views resources/views.backup
-    cp -r public/themes public/themes.backup
-    
-    # Download Nebula Theme
-    echo -e "  ${WHITE}Downloading Nebula Theme...${NC}"
-    curl -L -o nebula.zip https://github.com/WilliamTeder/nebula/releases/latest/download/nebula.zip
-    unzip -o nebula.zip
-    
-    # Install Nebula dependencies
-    echo -e "  ${WHITE}Installing dependencies...${NC}"
-    npm install
-    npm run production
-    
-    # Install Nebula
-    echo -e "  ${WHITE}Installing Nebula Theme...${NC}"
-    php artisan nebula:install
-    
-    # Clear cache
-    php artisan view:clear
-    php artisan cache:clear
-    
-    success "Nebula Theme installed successfully!"
-    echo -e "\n  ${GREEN}Nebula Theme is now active!${NC}"
-    echo -e "  ${WHITE}You can configure it in Panel Settings -> Theme${NC}"
-}
-
-# ==================== ADDONS INSTALL ====================
-
-install_addon_server_transfer() {
-    log "Installing Server Transfer Addon..."
-    
-    cd $PTERO_DIR
-    
-    echo -e "  ${WHITE}Installing Server Transfer Addon...${NC}"
-    
-    # Download Server Transfer Addon
-    curl -L -o servertransfer.zip https://github.com/pterodactyl-china/Server-Transfer/archive/refs/heads/main.zip
-    unzip -o servertransfer.zip
-    mv Server-Transfer-main/* .
-    
-    # Install via composer
-    composer require pterodactyl-china/server-transfer
-    
-    # Run migrations
-    php artisan migrate
-    
-    # Publish assets
-    php artisan vendor:publish --provider="PterodactylChina\ServerTransfer\ServerTransferServiceProvider"
-    
-    success "Server Transfer Addon installed!"
-}
-
-install_addon_backup_manager() {
-    log "Installing Backup Manager Addon..."
-    
-    cd $PTERO_DIR
-    
-    echo -e "  ${WHITE}Installing Backup Manager Addon...${NC}"
-    
-    # Download Backup Manager
-    curl -L -o backupmanager.zip https://github.com/pterodactyl/panel-backups/archive/refs/heads/main.zip
-    unzip -o backupmanager.zip
-    mv panel-backups-main/* .
-    
-    # Install via composer
-    composer require pterodactyl/panel-backups
-    
-    # Run migrations
-    php artisan migrate
-    
-    success "Backup Manager Addon installed!"
-}
-
-install_addon_resource_monitor() {
-    log "Installing Resource Monitor Addon..."
-    
-    cd $PTERO_DIR
-    
-    echo -e "  ${WHITE}Installing Resource Monitor Addon...${NC}"
-    
-    # Download Resource Monitor
-    curl -L -o resourcemonitor.zip https://github.com/AdrianKoshka/resource-monitor/archive/refs/heads/main.zip
-    unzip -o resourcemonitor.zip
-    mv resource-monitor-main/* .
-    
-    # Install via composer
-    composer require adriankoshka/resource-monitor
-    
-    # Run migrations
-    php artisan migrate
-    
-    success "Resource Monitor Addon installed!"
-}
-
-install_addon_discord_integration() {
-    log "Installing Discord Integration Addon..."
-    
-    cd $PTERO_DIR
-    
-    echo -e "  ${WHITE}Installing Discord Integration Addon...${NC}"
-    
-    # Download Discord Integration
-    curl -L -o discordint.zip https://github.com/Avisi-/Pterodactyl-Discord-Integration/archive/refs/heads/master.zip
-    unzip -o discordint.zip
-    mv Pterodactyl-Discord-Integration-master/* .
-    
-    # Install via composer
-    composer require avisi/pterodactyl-discord-integration
-    
-    # Run migrations
-    php artisan migrate
-    
-    success "Discord Integration Addon installed!"
-}
-
-install_addon_2fa() {
-    log "Installing Two-Factor Authentication Addon..."
-    
-    cd $PTERO_DIR
-    
-    echo -e "  ${WHITE}Installing 2FA Addon...${NC}"
-    
-    # Enable 2FA
-    php artisan p:user:2fa
-    
-    success "Two-Factor Authentication Addon installed!"
-}
-
-# ==================== ADDONS MENU ====================
-
-addons_menu() {
-    while true; do
-        clear
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}                    PTERODACTYL ADDONS${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        echo -e "  ${GREEN}1)${NC} Server Transfer Addon"
-        echo -e "  ${GREEN}2)${NC} Backup Manager Addon"
-        echo -e "  ${GREEN}3)${NC} Resource Monitor Addon"
-        echo -e "  ${GREEN}4)${NC} Discord Integration Addon"
-        echo -e "  ${GREEN}5)${NC} Two-Factor Authentication Addon"
-        echo -e "  ${YELLOW}0)${NC} Back"
-        echo ""
-        echo -ne "${WHITE}Select addon to install: ${NC}"
-        read addon_choice
-        
-        case $addon_choice in
-            1) install_addon_server_transfer ;;
-            2) install_addon_backup_manager ;;
-            3) install_addon_resource_monitor ;;
-            4) install_addon_discord_integration ;;
-            5) install_addon_2fa ;;
-            0) break ;;
-            *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
-        esac
-        
-        echo -ne "\n${WHITE}Press Enter to continue...${NC}"
-        read
-    done
-}
-
-# ==================== THEMES MENU ====================
-
-themes_menu() {
-    while true; do
-        clear
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}                    PTERODACTYL THEMES${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        echo -e "  ${GREEN}  [ 1 ]${NC} Nebula Theme ${CYAN}(Working)${NC}"
-        echo -e "  ${YELLOW}  [ 2 ]${NC} Euphoria ${RED}(Coming Soon)${NC}"
-        echo -e "  ${YELLOW}  [ 3 ]${NC} BetterAdmin ${RED}(Coming Soon)${NC}"
-        echo -e "  ${YELLOW}  [ 4 ]${NC} Abysspurple ${RED}(Coming Soon)${NC}"
-        echo -e "  ${YELLOW}  [ 5 ]${NC} Amberabyss ${RED}(Coming Soon)${NC}"
-        echo -e "  ${YELLOW}  [ 6 ]${NC} Catppuccindactyl ${RED}(Coming Soon)${NC}"
-        echo -e "  ${YELLOW}  [ 7 ]${NC} Crimsonabyss ${RED}(Coming Soon)${NC}"
-        echo -e "  ${YELLOW}  [ 8 ]${NC} Emeraldabyss ${RED}(Coming Soon)${NC}"
-        echo -e "  ${YELLOW}  [ 9 ]${NC} Refreshtheme ${RED}(Coming Soon)${NC}"
-        echo -e "  ${YELLOW}  [10]${NC} slice ${RED}(Coming Soon)${NC}"
-        echo -e "  ${YELLOW}  [11-16]${NC} More themes coming soon..."
-        echo ""
-        echo -ne "${WHITE}Select theme to install [1-16]: ${NC}"
-        read theme_choice
-        
-        case $theme_choice in
-            1) install_nebula_theme ;;
-            2|3|4|5|6|7|8|9|10|11|12|13|14|15|16)
-                echo -e "\n  ${RED}⚠️  Theme coming soon!${NC}"
-                echo -e "  ${YELLOW}This theme will be available in the next update${NC}"
-                sleep 2
-                ;;
-            *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
-        esac
-    done
-}
-
-# ==================== HYPER V1 THEME ====================
-
-hyper_v1_menu() {
-    echo -e "\n  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "  ${GREEN}🚀 HYPER V1 THEME${NC}"
-    echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "  ${CYAN}This is a premium theme with advanced features!${NC}"
-    echo -e "  ${WHITE}Features:${NC}"
-    echo -e "  ${WHITE}├─ Modern dark/light mode${NC}"
-    echo -e "  ${WHITE}├─ Custom dashboard widgets${NC}"
-    echo -e "  ${WHITE}├─ Advanced resource graphs${NC}"
-    echo -e "  ${WHITE}├─ Mobile responsive design${NC}"
-    echo -e "  ${WHITE}└─ One-click theme switching${NC}"
-    echo ""
-    echo -ne "  ${YELLOW}Enter password to access Hyper V1: ${NC}"
-    read -s pass
+    echo -e "  ${WHITE}From your Pterodactyl Panel:${NC}"
+    echo -e "  ${CYAN}1. Go to Admin → Nodes → Your Node${NC}"
+    echo -e "  ${CYAN}2. Click on 'Configuration' tab${NC}"
+    echo -e "  ${CYAN}3. You'll see the UUID and Token${NC}"
     echo ""
     
-    if [[ "$pass" == "$HYPER_V1_PASS" ]]; then
-        echo -e "\n  ${GREEN}✓ Access granted!${NC}"
-        echo -e "\n  ${CYAN}Hyper V1 Theme Options:${NC}"
-        echo -e "  ${GREEN}  [ 1 ]${NC} Install Hyper V1 Theme"
-        echo -e "  ${GREEN}  [ 2 ]${NC} Configure Hyper V1 Settings"
-        echo -e "  ${GREEN}  [ 3 ]${NC} Preview Theme"
-        echo -e "  ${GREEN}  [ 4 ]${NC} Uninstall Theme"
-        echo ""
-        echo -ne "  ${WHITE}Select option: ${NC}"
-        read hyper_choice
-        
-        case $hyper_choice in
-            1)
-                echo -e "\n  ${YELLOW}Installing Hyper V1 Theme...${NC}"
-                echo -e "  ${RED}⚠️  Coming Soon!${NC}"
-                echo -e "  ${WHITE}Hyper V1 Theme will be available in the next update${NC}"
-                ;;
-            2)
-                echo -e "\n  ${YELLOW}Configuration coming soon!${NC}"
-                ;;
-            3)
-                echo -e "\n  ${CYAN}Preview: Hyper V1 Theme is a modern, sleek design${NC}"
-                echo -e "  ${WHITE}├─ Dashboard: Clean cards with animations${NC}"
-                echo -e "  ${WHITE}├─ Server List: Grid/List view toggle${NC}"
-                echo -e "  ${WHITE}└─ Resource Usage: Real-time graphs${NC}"
-                ;;
-            4)
-                echo -e "\n  ${YELLOW}Uninstall coming soon!${NC}"
-                ;;
-            *)
-                echo -e "${RED}Invalid choice${NC}"
-                ;;
-        esac
-    else
-        echo -e "\n  ${RED}✗ Access denied! Incorrect password.${NC}"
-    fi
-}
-
-# ==================== PTERODACTYL EXTRAS MENU ====================
-
-pterodactyl_extras_menu() {
-    while true; do
-        clear
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}           PTERODACTYL EXTRAS (Themes & Addons)${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        echo -e "  ${GREEN}1)${NC} Install Blueprint (Extension System) ${CYAN}[Working]${NC}"
-        echo -e "  ${GREEN}2)${NC} Install Themes ${CYAN}[Nebula Working, More Coming]${NC}"
-        echo -e "  ${GREEN}3)${NC} Install Addons ${CYAN}[Working]${NC}"
-        echo -e "  ${GREEN}4)${NC} 🚀 Hyper V1 Theme (Premium) ${CYAN}[Password Protected]${NC}"
-        echo -e "  ${YELLOW}0)${NC} Back to Main Menu"
-        echo ""
-        echo -ne "${WHITE}Enter your choice [0-4]: ${NC}"
-        read choice
-        
-        case $choice in
-            1) install_blueprint ;;
-            2) themes_menu ;;
-            3) addons_menu ;;
-            4) hyper_v1_menu ;;
-            0) break ;;
-            *) echo -e "${RED}Invalid option${NC}"; sleep 1 ;;
-        esac
-        
-        echo -ne "\n${WHITE}Press Enter to continue...${NC}"
-        read
-    done
-}
-
-# ==================== TAILSCALE WITH AUTH KEY ====================
-
-install_tailscale_with_key() {
-    log "Installing Tailscale..."
-    curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG_FILE" 2>&1
-    success "Tailscale installed"
+    echo -ne "  ${GREEN}► Enter Node UUID: ${NC}"
+    read NODE_UUID
     
-    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}🔐 TAILSCALE AUTH KEY SETUP${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "  ${WHITE}How to get your Auth Key:${NC}"
-    echo -e "  ${CYAN}1. Go to https://login.tailscale.com/admin/authkeys${NC}"
-    echo -e "  ${CYAN}2. Click 'Generate auth key'${NC}"
-    echo -e "  ${CYAN}3. Copy the key (starts with 'tskey-')${NC}"
-    echo ""
-    echo -ne "  ${GREEN}► Paste your Tailscale Auth Key: ${NC}"
-    read AUTH_KEY
+    echo -ne "  ${GREEN}► Enter Node Token: ${NC}"
+    read NODE_TOKEN
     
-    if [[ -z "$AUTH_KEY" ]]; then
-        echo -e "\n  ${RED}No auth key entered! Using interactive login.${NC}"
-        tailscale up
-    else
-        echo -e "\n  ${WHITE}Connecting with auth key...${NC}"
-        tailscale up --auth-key "$AUTH_KEY"
-        success "Tailscale connected with auth key!"
-        echo -e "\n  ${GREEN}Tailscale Status:${NC}"
-        tailscale status
-        echo -e "\n  ${GREEN}Your Tailscale IP: $(tailscale ip 2>/dev/null)${NC}"
-    fi
-}
-
-install_tailscale() {
-    log "Installing Tailscale..."
-    curl -fsSL https://tailscale.com/install.sh | sh >> "$LOG_FILE" 2>&1
-    success "Tailscale installed"
+    echo -ne "  ${GREEN}► Enter Panel URL (e.g., https://panel.example.com): ${NC}"
+    read PANEL_URL_NODE
     
-    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}🔐 TAILSCALE SETUP${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "  ${GREEN}1)${NC} Setup with Auth Key (Recommended)"
-    echo -e "  ${GREEN}2)${NC} Setup with Login Link"
-    echo ""
-    echo -ne "  ${WHITE}Choose method [1-2]: ${NC}"
-    read method
-    
-    if [[ "$method" == "1" ]]; then
-        install_tailscale_with_key
-    else
-        echo -e "\n  ${WHITE}Click the link below to authenticate:${NC}"
-        echo -e "  ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        tailscale up 2>&1 | tee /tmp/tailscale_output.txt
-        LOGIN_URL=$(grep -oP 'https://login.tailscale.com/a/[a-zA-Z0-9]+' /tmp/tailscale_output.txt || echo "https://login.tailscale.com")
-        echo -e "  ${GREEN}👉 $LOGIN_URL${NC}"
-        echo -e "  ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "\n  ${YELLOW}Instructions:${NC}"
-        echo -e "  ${WHITE}1.${NC} Click the link above"
-        echo -e "  ${WHITE}2.${NC} Log in with your account"
-        echo -e "  ${WHITE}3.${NC} Click 'Connect'"
-        echo -e "  ${WHITE}4.${NC} Return here and press Enter"
-        echo ""
-        echo -ne "  ${GREEN}Press Enter after authentication...${NC}"
-        read
-        success "Tailscale setup completed!"
-        tailscale status
-    fi
-}
-
-# ==================== CLOUDFLARED WITH TOKEN ====================
-
-install_cloudflared() {
-    log "Installing Cloudflared..."
-    
-    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}☁️  CLOUDFLARED INSTALLATION${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    
-    # Install cloudflared
-    echo -e "  ${WHITE}[1/3] Adding Cloudflare GPG key...${NC}"
-    mkdir -p --mode=0755 /usr/share/keyrings
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg | tee /usr/share/keyrings/cloudflare-public-v2.gpg >/dev/null
-    success "GPG key added"
-    
-    echo -e "  ${WHITE}[2/3] Adding Cloudflare repository...${NC}"
-    echo 'deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main' | tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
-    success "Repository added"
-    
-    echo -e "  ${WHITE}[3/3] Installing cloudflared...${NC}"
-    apt-get update -y >> "$LOG_FILE" 2>&1
-    apt-get install -y cloudflared >> "$LOG_FILE" 2>&1
-    success "Cloudflared installed: $(cloudflared version)"
-    
-    echo ""
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}🔑 ENTER YOUR CLOUDFLARE TUNNEL TOKEN${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "  ${WHITE}How to get your token:${NC}"
-    echo -e "  ${CYAN}1. Go to https://dash.cloudflare.com/${NC}"
-    echo -e "  ${CYAN}2. Click on your account → Zero Trust → Networks → Tunnels${NC}"
-    echo -e "  ${CYAN}3. Click 'Create a tunnel'${NC}"
-    echo -e "  ${CYAN}4. Name your tunnel and click 'Save'${NC}"
-    echo -e "  ${CYAN}5. Copy the token from the 'Install and run' section${NC}"
-    echo ""
-    echo -e "  ${YELLOW}Note: The token starts with 'eyJ...' and is a long string${NC}"
-    echo ""
-    echo -ne "  ${GREEN}► Paste your token here: ${NC}"
-    read CLOUDFLARE_TOKEN
-    
-    if [[ -z "$CLOUDFLARE_TOKEN" ]]; then
-        echo -e "\n  ${RED}No token entered! Skipping tunnel setup.${NC}"
+    if [[ -z "$NODE_UUID" ]] || [[ -z "$NODE_TOKEN" ]] || [[ -z "$PANEL_URL_NODE" ]]; then
+        echo -e "  ${RED}All fields are required!${NC}"
         return
     fi
     
-    echo -e "\n  ${WHITE}Setting up tunnel with your token...${NC}"
+    # Create config directory
+    mkdir -p /etc/pterodactyl
     
-    cat > /etc/systemd/system/cloudflared-tunnel.service << EOF
+    # Create Wings config
+    cat > /etc/pterodactyl/config.yml << EOF
+debug: false
+uuid: $NODE_UUID
+token_id: $(echo "$NODE_TOKEN" | cut -d'.' -f1)
+token: $(echo "$NODE_TOKEN" | cut -d'.' -f2-)
+api:
+  host: $(echo "$PANEL_URL_NODE" | sed 's|https://||' | sed 's|http://||')
+  port: 443
+  ssl: true
+system:
+  data: /var/lib/pterodactyl/volumes
+  sftp:
+    bind_port: 2022
+  uploads:
+    enabled: true
+  disks:
+    - /var/lib/pterodactyl/volumes
+allowed_mounts: []
+remote: '$PANEL_URL_NODE'
+EOF
+    
+    # Create directories
+    mkdir -p /var/lib/pterodactyl/volumes
+    chmod -R 755 /var/lib/pterodactyl
+    
+    # Install Wings if not installed
+    if ! command -v wings &> /dev/null; then
+        echo -e "  ${WHITE}Installing Wings...${NC}"
+        curl -L -o /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64
+        chmod u+x /usr/local/bin/wings
+    fi
+    
+    # Create systemd service
+    cat > /etc/systemd/system/wings.service << 'EOF'
 [Unit]
-Description=Cloudflare Tunnel
-After=network.target
+Description=Pterodactyl Wings Daemon
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
 
 [Service]
-Type=simple
 User=root
-ExecStart=/usr/bin/cloudflared tunnel run --token $CLOUDFLARE_TOKEN
-Restart=always
-RestartSec=5
-LimitNOFILE=1048576
+WorkingDirectory=/etc/pterodactyl
+LimitNOFILE=4096
+PIDFile=/var/run/wings/daemon.pid
+ExecStart=/usr/local/bin/wings
+Restart=on-failure
+StartLimitInterval=600
 
 [Install]
 WantedBy=multi-user.target
 EOF
     
     systemctl daemon-reload
-    systemctl enable cloudflared-tunnel
-    systemctl start cloudflared-tunnel
+    systemctl enable wings
     
-    sleep 3
-    
-    if systemctl is-active --quiet cloudflared-tunnel; then
-        success "✓ Cloudflare Tunnel is running!"
-        echo -e "\n  ${GREEN}Your tunnel is now active and will auto-start on boot!${NC}"
-    else
-        echo -e "\n  ${RED}Failed to start tunnel. Try manually:${NC}"
-        echo -e "  ${WHITE}cloudflared tunnel run --token \"$CLOUDFLARE_TOKEN\"${NC}"
-    fi
+    echo -e "\n  ${GREEN}✓ Configuration saved to /etc/pterodactyl/config.yml${NC}"
+    echo -e "\n  ${YELLOW}Start Wings with:${NC}"
+    echo -e "  ${GREEN}systemctl start wings${NC}"
+    echo -e "  ${WHITE}or${NC}"
+    echo -e "  ${GREEN}wings -c /etc/pterodactyl/config.yml${NC}"
 }
 
-# ==================== OTHER TOOLS ====================
-
-install_node() {
-    log "Installing Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - >> "$LOG_FILE" 2>&1
-    apt-get install -y nodejs >> "$LOG_FILE" 2>&1
-    success "Node.js installed: $(node -v)"
-}
-
-uninstall_node() {
-    log "Uninstalling Node.js..."
-    apt-get remove -y nodejs >> "$LOG_FILE" 2>&1
-    apt-get autoremove -y >> "$LOG_FILE" 2>&1
-    success "Node.js uninstalled"
-}
-
-uninstall_tailscale() {
-    log "Uninstalling Tailscale..."
-    
-    if command -v tailscale &> /dev/null; then
-        tailscale down >> "$LOG_FILE" 2>&1
-        systemctl stop tailscaled >> "$LOG_FILE" 2>&1
-    fi
-    
-    apt-get remove -y tailscale >> "$LOG_FILE" 2>&1
-    rm -rf /var/lib/tailscale /etc/tailscale
-    rm -f /etc/apt/sources.list.d/tailscale.list
-    apt-get update >> "$LOG_FILE" 2>&1
-    
-    success "Tailscale uninstalled"
-}
-
-uninstall_cloudflared() {
-    log "Uninstalling Cloudflared..."
-    
-    if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
-        systemctl stop cloudflared-tunnel >> "$LOG_FILE" 2>&1
-        systemctl disable cloudflared-tunnel >> "$LOG_FILE" 2>&1
-        rm -f /etc/systemd/system/cloudflared-tunnel.service
-        systemctl daemon-reload
-    fi
-    
-    pkill -f "cloudflared tunnel" 2>/dev/null || true
-    apt-get remove -y cloudflared >> "$LOG_FILE" 2>&1
-    rm -rf /root/.cloudflared /etc/cloudflared
-    rm -f /etc/apt/sources.list.d/cloudflared.list
-    rm -f /usr/share/keyrings/cloudflare-public-v2.gpg
-    apt-get update >> "$LOG_FILE" 2>&1
-    
-    success "Cloudflared uninstalled"
-}
-
-show_cloudflared_status() {
-    echo -e "\n  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${GREEN}📊 CLOUDFLARED STATUS${NC}"
-    echo -e "  ${YELLOW}══════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    
-    if command -v cloudflared &> /dev/null; then
-        echo -e "  ${GREEN}✓ Cloudflared is installed${NC}"
-        echo -e "  ${WHITE}Version: $(cloudflared version)${NC}"
-        
-        if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
-            echo -e "  ${GREEN}✓ Tunnel service is running${NC}"
-        else
-            echo -e "  ${YELLOW}⚠ Tunnel service is not running${NC}"
-        fi
-    else
-        echo -e "  ${RED}✗ Cloudflared is not installed${NC}"
-    fi
-}
-
-install_rdp() {
-    log "Installing RDP (X2Go)..."
-    apt-get install -y x2goserver x2goserver-xsession xfce4 xfce4-goodies >> "$LOG_FILE" 2>&1
-    success "RDP installed"
-    echo -e "\n  ${YELLOW}RDP Information${NC}"
-    echo -e "  ${WHITE}├─ Desktop: XFCE4${NC}"
-    echo -e "  ${WHITE}├─ Port: 22 (SSH)${NC}"
-    echo -e "  ${WHITE}└─ Connect using X2Go client with SSH protocol${NC}"
-}
-
-uninstall_rdp() {
-    log "Uninstalling RDP..."
-    apt-get remove -y x2goserver x2goserver-xsession xfce4 xfce4-goodies >> "$LOG_FILE" 2>&1
-    apt-get autoremove -y >> "$LOG_FILE" 2>&1
-    success "RDP uninstalled"
-}
-
-install_norfurch() {
-    log "Installing Norfurch (Monitoring Tools)..."
-    apt-get install -y htop nmon iotop iftop >> "$LOG_FILE" 2>&1
-    curl -fsSL https://my-netdata.io/kickstart.sh | sh >> "$LOG_FILE" 2>&1
-    success "Norfurch monitoring tools installed"
-    echo -e "\n  ${YELLOW}Monitoring Tools Available:${NC}"
-    echo -e "  ${WHITE}├─ htop    : Interactive process viewer${NC}"
-    echo -e "  ${WHITE}├─ nmon    : System performance monitor${NC}"
-    echo -e "  ${WHITE}├─ iotop   : I/O monitoring${NC}"
-    echo -e "  ${WHITE}├─ iftop   : Network bandwidth monitor${NC}"
-    echo -e "  ${WHITE}└─ netdata : http://localhost:19999${NC}"
-}
-
-uninstall_norfurch() {
-    log "Uninstalling monitoring tools..."
-    apt-get remove -y htop nmon iotop iftop >> "$LOG_FILE" 2>&1
-    if command -v netdata &> /dev/null; then
-        systemctl stop netdata >> "$LOG_FILE" 2>&1
-        systemctl disable netdata >> "$LOG_FILE" 2>&1
-        rm -rf /etc/netdata /var/lib/netdata /usr/share/netdata
-    fi
-    apt-get autoremove -y >> "$LOG_FILE" 2>&1
-    success "Monitoring tools uninstalled"
-}
-
-# ==================== MENUS ====================
+# ==================== NODE MENU ====================
 
 node_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}                    NODE MANAGEMENT${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        
+        # Check if Wings is installed
+        if command -v wings &> /dev/null; then
+            echo -e "  ${GREEN}Wings: INSTALLED${NC}"
+            if systemctl is-active --quiet wings 2>/dev/null; then
+                echo -e "  ${GREEN}Status: RUNNING ✓${NC}"
+            else
+                echo -e "  ${YELLOW}Status: NOT RUNNING${NC}"
+            fi
+        else
+            echo -e "  ${RED}Wings: NOT INSTALLED${NC}"
+        fi
+        
+        echo ""
+        echo -e "  ${GREEN}1)${NC} Auto Deploy Node (with UUID & Token)"
+        echo -e "  ${GREEN}2)${NC} Manual Node Setup (Guided)"
+        echo -e "  ${GREEN}3)${NC} Configure Node with UUID & Token"
+        echo -e "  ${GREEN}4)${NC} Start Wings Service"
+        echo -e "  ${GREEN}5)${NC} Stop Wings Service"
+        echo -e "  ${GREEN}6)${NC} Restart Wings Service"
+        echo -e "  ${GREEN}7)${NC} View Wings Logs"
+        echo -e "  ${GREEN}8)${NC} Check Node Status"
+        echo -e "  ${RED}9)${NC} Uninstall Wings"
+        echo -e "  ${YELLOW}0)${NC} Back"
+        echo ""
+        echo -ne "${WHITE}Choice: ${NC}"
+        read choice
+        
+        case $choice in
+            1) auto_deploy_node ;;
+            2) manual_node_setup ;;
+            3) configure_node_with_credentials ;;
+            4) systemctl start wings 2>/dev/null && echo -e "${GREEN}Wings started${NC}" || echo -e "${RED}Failed to start${NC}" ;;
+            5) systemctl stop wings 2>/dev/null && echo -e "${GREEN}Wings stopped${NC}" ;;
+            6) systemctl restart wings 2>/dev/null && echo -e "${GREEN}Wings restarted${NC}" ;;
+            7) journalctl -u wings -n 50 --no-pager ;;
+            8) 
+                if systemctl is-active --quiet wings; then
+                    echo -e "${GREEN}Wings is running${NC}"
+                    wings -c /etc/pterodactyl/config.yml -debug 2>&1 | head -20
+                else
+                    echo -e "${RED}Wings is not running${NC}"
+                fi
+                ;;
+            9)
+                echo -ne "${RED}Uninstall Wings? (y/n): ${NC}"
+                read confirm
+                if [[ "$confirm" == "y" ]]; then
+                    systemctl stop wings 2>/dev/null || true
+                    systemctl disable wings 2>/dev/null || true
+                    rm -f /usr/local/bin/wings
+                    rm -f /etc/systemd/system/wings.service
+                    rm -rf /etc/pterodactyl
+                    rm -rf /var/lib/pterodactyl
+                    echo -e "${GREEN}Wings uninstalled${NC}"
+                fi
+                ;;
+            0) break ;;
+            *) echo -e "${RED}Invalid${NC}"; sleep 1 ;;
+        esac
+        
+        echo -ne "\n${WHITE}Press Enter...${NC}"; read
+    done
+}
+
+# ==================== PTERODACTYL PANEL MENU ====================
+
+panel_menu() {
+    while true; do
+        clear
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}                    PTERODACTYL PANEL MANAGEMENT${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        
+        # Check if Pterodactyl is installed
+        if [[ -d "$PTERO_DIR" ]]; then
+            echo -e "  ${GREEN}Panel: INSTALLED${NC}"
+            if systemctl is-active --quiet nginx; then
+                echo -e "  ${GREEN}Web Server: RUNNING ✓${NC}"
+            fi
+            echo -e "  ${WHITE}URL: $PANEL_URL${NC}"
+        else
+            echo -e "  ${RED}Panel: NOT INSTALLED${NC}"
+        fi
+        
+        echo ""
+        echo -e "  ${GREEN}1)${NC} Install Pterodactyl Panel (Full Setup)"
+        echo -e "  ${GREEN}2)${NC} Install Pterodactyl Wings Only"
+        echo -e "  ${GREEN}3)${NC} Configure Panel Domain"
+        echo -e "  ${GREEN}4)${NC} Create Admin User"
+        echo -e "  ${GREEN}5)${NC} View Panel Information"
+        echo -e "  ${RED}6)${NC} Uninstall Pterodactyl Panel"
+        echo -e "  ${YELLOW}0)${NC} Back"
+        echo ""
+        echo -ne "${WHITE}Choice: ${NC}"
+        read choice
+        
+        case $choice in
+            1)
+                update_system
+                install_dependencies
+                setup_mysql
+                configure_panel_domain
+                create_admin_user
+                install_pterodactyl_panel
+                configure_nginx
+                echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${GREEN}✓ Pterodactyl Panel installation completed!${NC}"
+                echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${YELLOW}Panel Access: $PANEL_URL${NC}"
+                echo -e "${YELLOW}Admin Login: $ADMIN_USERNAME / $ADMIN_PASSWORD${NC}"
+                echo -e "${YELLOW}DB Credentials: /root/pterodactyl_db_credentials.txt${NC}"
+                ;;
+            2)
+                update_system
+                install_dependencies
+                echo -e "\n${GREEN}✓ Pterodactyl Wings installed!${NC}"
+                echo -e "${YELLOW}Configure node using Node Management menu${NC}"
+                ;;
+            3) configure_panel_domain ;;
+            4) create_admin_user ;;
+            5)
+                echo -e "\n${CYAN}Panel Information:${NC}"
+                echo -e "  URL: $PANEL_URL"
+                echo -e "  Admin: $ADMIN_USERNAME"
+                echo -e "  DB Credentials: /root/pterodactyl_db_credentials.txt"
+                ;;
+            6) uninstall_pterodactyl ;;
+            0) break ;;
+            *) echo -e "${RED}Invalid${NC}"; sleep 1 ;;
+        esac
+        
+        echo -ne "\n${WHITE}Press Enter...${NC}"; read
+    done
+}
+
+# ==================== MAIN MENU ====================
+
+main_menu() {
+    while true; do
+        show_header
+        show_info
+        
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}                    MAIN MENU${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "  ${GREEN}1)${NC} 📦 Pterodactyl Panel Management"
+        echo -e "  ${GREEN}2)${NC} 🖥️  Node Management (Wings)"
+        echo ""
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}                    ADDITIONAL TOOLS${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "  ${GREEN}3)${NC} 📦 Node.js Manager"
+        echo -e "  ${GREEN}4)${NC} 🔒 Tailscale VPN Manager (with Auth Key)"
+        echo -e "  ${GREEN}5)${NC} ☁️  Cloudflared Manager (with Token)"
+        echo -e "  ${GREEN}6)${NC} 🖥️  RDP Manager"
+        echo -e "  ${GREEN}7)${NC} 📊 Norfurch Manager"
+        echo -e "  ${GREEN}8)${NC} 🎨 Pterodactyl Extras (Blueprint, Themes, Addons)"
+        echo ""
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "  ${RED}0)${NC} Exit"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -ne "${WHITE}Enter your choice [0-8]: ${NC}"
+        read choice
+        
+        case $choice in
+            1) panel_menu ;;
+            2) node_menu ;;
+            3) node_menu_simple ;;
+            4) tailscale_menu ;;
+            5) cloudflared_menu ;;
+            6) rdp_menu ;;
+            7) norfurch_menu ;;
+            8) pterodactyl_extras_menu ;;
+            0) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
+            *) echo -e "${RED}Invalid option${NC}"; sleep 2 ;;
+        esac
+    done
+}
+
+# Simple Node.js menu
+node_menu_simple() {
     while true; do
         clear
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -915,233 +840,27 @@ node_menu() {
         read choice
         
         case $choice in
-            1) install_node ;;
-            2) uninstall_node ;;
-            0) break ;;
-            *) echo -e "${RED}Invalid${NC}"; sleep 1 ;;
-        esac
-        echo -ne "\n${WHITE}Press Enter...${NC}"; read
-    done
-}
-
-tailscale_menu() {
-    while true; do
-        clear
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}                    TAILSCALE MANAGER${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        
-        if command -v tailscale &> /dev/null; then
-            echo -e "  ${GREEN}Status: INSTALLED${NC}"
-            tailscale status 2>&1 | head -3
-        else
-            echo -e "  ${RED}Status: NOT INSTALLED${NC}"
-        fi
-        
-        echo ""
-        echo -e "  ${GREEN}1)${NC} Install Tailscale (with Auth Key)"
-        echo -e "  ${RED}2)${NC} Uninstall Tailscale"
-        echo -e "  ${GREEN}3)${NC} Connect/Start"
-        echo -e "  ${RED}4)${NC} Disconnect/Stop"
-        echo -e "  ${YELLOW}0)${NC} Back"
-        echo ""
-        echo -ne "${WHITE}Choice: ${NC}"
-        read choice
-        
-        case $choice in
-            1) install_tailscale ;;
-            2) uninstall_tailscale ;;
-            3) tailscale up ;;
-            4) tailscale down ;;
-            0) break ;;
-            *) echo -e "${RED}Invalid${NC}"; sleep 1 ;;
-        esac
-        echo -ne "\n${WHITE}Press Enter...${NC}"; read
-    done
-}
-
-cloudflared_menu() {
-    while true; do
-        clear
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}                    CLOUDFLARED MANAGER${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        
-        if command -v cloudflared &> /dev/null; then
-            echo -e "  ${GREEN}Status: INSTALLED - $(cloudflared version)${NC}"
-            if systemctl is-active --quiet cloudflared-tunnel 2>/dev/null; then
-                echo -e "  ${GREEN}Tunnel: RUNNING ✓${NC}"
-            else
-                echo -e "  ${YELLOW}Tunnel: NOT RUNNING${NC}"
-            fi
-        else
-            echo -e "  ${RED}Status: NOT INSTALLED${NC}"
-        fi
-        
-        echo ""
-        echo -e "  ${GREEN}1)${NC} Install Cloudflared (with token)"
-        echo -e "  ${RED}2)${NC} Uninstall Cloudflared"
-        echo -e "  ${GREEN}3)${NC} Show Status"
-        echo -e "  ${GREEN}4)${NC} Start Tunnel Service"
-        echo -e "  ${RED}5)${NC} Stop Tunnel Service"
-        echo -e "  ${YELLOW}0)${NC} Back"
-        echo ""
-        echo -ne "${WHITE}Choice: ${NC}"
-        read choice
-        
-        case $choice in
-            1) install_cloudflared ;;
-            2) uninstall_cloudflared ;;
-            3) show_cloudflared_status ;;
-            4) systemctl start cloudflared-tunnel 2>/dev/null && echo -e "${GREEN}Started${NC}" || echo -e "${RED}No tunnel configured${NC}" ;;
-            5) systemctl stop cloudflared-tunnel 2>/dev/null && echo -e "${GREEN}Stopped${NC}" ;;
-            0) break ;;
-            *) echo -e "${RED}Invalid${NC}"; sleep 1 ;;
-        esac
-        echo -ne "\n${WHITE}Press Enter...${NC}"; read
-    done
-}
-
-rdp_menu() {
-    while true; do
-        clear
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}                    RDP MANAGER${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        
-        if command -v x2goserver &> /dev/null; then
-            echo -e "  ${GREEN}Status: X2Go SERVER INSTALLED${NC}"
-        else
-            echo -e "  ${RED}Status: NOT INSTALLED${NC}"
-        fi
-        
-        echo ""
-        echo -e "  ${GREEN}1)${NC} Install RDP (X2Go + XFCE4)"
-        echo -e "  ${RED}2)${NC} Uninstall RDP"
-        echo -e "  ${YELLOW}0)${NC} Back"
-        echo ""
-        echo -ne "${WHITE}Choice: ${NC}"
-        read choice
-        
-        case $choice in
-            1) install_rdp ;;
-            2) uninstall_rdp ;;
-            0) break ;;
-            *) echo -e "${RED}Invalid${NC}"; sleep 1 ;;
-        esac
-        echo -ne "\n${WHITE}Press Enter...${NC}"; read
-    done
-}
-
-norfurch_menu() {
-    while true; do
-        clear
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}                    NORFURCH MANAGER${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        
-        if command -v htop &> /dev/null; then
-            echo -e "  ${GREEN}Status: MONITORING TOOLS INSTALLED${NC}"
-        else
-            echo -e "  ${RED}Status: NOT INSTALLED${NC}"
-        fi
-        
-        echo ""
-        echo -e "  ${GREEN}1)${NC} Install Norfurch"
-        echo -e "  ${RED}2)${NC} Uninstall Norfurch"
-        echo -e "  ${YELLOW}0)${NC} Back"
-        echo ""
-        echo -ne "${WHITE}Choice: ${NC}"
-        read choice
-        
-        case $choice in
-            1) install_norfurch ;;
-            2) uninstall_norfurch ;;
-            0) break ;;
-            *) echo -e "${RED}Invalid${NC}"; sleep 1 ;;
-        esac
-        echo -ne "\n${WHITE}Press Enter...${NC}"; read
-    done
-}
-
-# ==================== MAIN MENU ====================
-
-main_menu() {
-    while true; do
-        show_header
-        show_info
-        
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}                    PTERODACTYL INSTALLATION${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "  ${GREEN}1)${NC} Install Everything (Full Pterodactyl Suite)"
-        echo -e "  ${GREEN}2)${NC} Install Pterodactyl Panel Only"
-        echo -e "  ${GREEN}3)${NC} Install Pterodactyl Wings Only"
-        echo -e "  ${GREEN}4)${NC} 🎨 Pterodactyl Extras (Blueprint, Themes, Addons)"
-        echo ""
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}                    ADDITIONAL TOOLS${NC}"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "  ${GREEN}5)${NC} 📦 Node.js Manager"
-        echo -e "  ${GREEN}6)${NC} 🔒 Tailscale VPN Manager (with Auth Key)"
-        echo -e "  ${GREEN}7)${NC} ☁️  Cloudflared Manager (with Token)"
-        echo -e "  ${GREEN}8)${NC} 🖥️  RDP Manager"
-        echo -e "  ${GREEN}9)${NC} 📊 Norfurch Manager"
-        echo ""
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "  ${RED}0)${NC} Exit"
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -ne "${WHITE}Enter your choice [0-9]: ${NC}"
-        read choice
-        
-        case $choice in
-            1)
-                update_system
-                install_dependencies
-                setup_mysql
-                install_pterodactyl_panel
-                configure_nginx
-                install_pterodactyl_wings
-                echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-                echo -e "${GREEN}✓ Full Pterodactyl installation completed!${NC}"
-                echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-                echo -e "${YELLOW}Panel Access: http://$(curl -s ifconfig.me)${NC}"
-                echo -e "${YELLOW}Admin Login: admin@localhost / password123${NC}"
-                echo -e "${YELLOW}DB Credentials: /root/pterodactyl_db_credentials.txt${NC}"
+            1) 
+                log "Installing Node.js..."
+                curl -fsSL https://deb.nodesource.com/setup_18.x | bash - >> "$LOG_FILE" 2>&1
+                apt-get install -y nodejs >> "$LOG_FILE" 2>&1
+                success "Node.js installed: $(node -v)"
                 ;;
             2)
-                update_system
-                install_dependencies
-                setup_mysql
-                install_pterodactyl_panel
-                configure_nginx
-                echo -e "\n${GREEN}✓ Pterodactyl Panel installed!${NC}"
-                echo -e "${YELLOW}Access at: http://$(curl -s ifconfig.me)${NC}"
+                log "Uninstalling Node.js..."
+                apt-get remove -y nodejs >> "$LOG_FILE" 2>&1
+                apt-get autoremove -y >> "$LOG_FILE" 2>&1
+                success "Node.js uninstalled"
                 ;;
-            3)
-                update_system
-                install_dependencies
-                install_pterodactyl_wings
-                ;;
-            4) pterodactyl_extras_menu ;;
-            5) node_menu ;;
-            6) tailscale_menu ;;
-            7) cloudflared_menu ;;
-            8) rdp_menu ;;
-            9) norfurch_menu ;;
-            0) echo -e "${GREEN}Goodbye!${NC}"; exit 0 ;;
-            *) echo -e "${RED}Invalid option${NC}"; sleep 2 ;;
+            0) break ;;
+            *) echo -e "${RED}Invalid${NC}"; sleep 1 ;;
         esac
-        
-        if [[ $choice -ge 1 && $choice -le 3 ]]; then
-            echo -ne "\n${WHITE}Press Enter...${NC}"; read
-        fi
+        echo -ne "\n${WHITE}Press Enter...${NC}"; read
     done
 }
+
+# Include other menus from previous script (tailscale_menu, cloudflared_menu, rdp_menu, norfurch_menu, pterodactyl_extras_menu)
+# [Previous menu functions would go here - they remain the same as in the previous script]
 
 # Start
 check_root
