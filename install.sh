@@ -1,46 +1,378 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# ==========================================================
+# GOSTDTGAMER PTERODACTYL PANEL INSTALLER
+# Simple working Pterodactyl Panel installation
+# ==========================================================
 
-clear
-echo "================================"
-echo "  Pterodactyl Auto Installer"
-echo "================================"
+set -e
 
-if [ "$EUID" -ne 0 ]; then
-  echo "Please run as root"
-  exit
-fi
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+NC='\033[0m'
 
-echo "Updating system..."
-apt update -y && apt upgrade -y
+# Variables
+MYSQL_ROOT_PASS=""
+MYSQL_PTERO_PASS=""
+PANEL_DOMAIN=""
 
-echo "Installing dependencies..."
-apt install -y curl wget git unzip nginx mariadb-server redis-server
+# Functions
+success() {
+    echo -e "${GREEN}[✓]${NC} $1"
+}
 
-echo "Installing PHP..."
-apt install -y php php-cli php-fpm php-mysql php-zip php-gd php-mbstring php-curl php-xml php-bcmath
+error() {
+    echo -e "${RED}[✗]${NC} $1"
+    exit 1
+}
 
-echo "Installing Composer..."
-curl -sS https://getcomposer.org/installer | php
-mv composer.phar /usr/local/bin/composer
+# Check root
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        error "Please run as root (use sudo)"
+    fi
+}
 
-echo "Downloading Pterodactyl Panel..."
-cd /var/www/
-mkdir pterodactyl
-cd pterodactyl
+# Show header
+show_header() {
+    clear
+    echo -e "${CYAN}"
+    cat << "EOF"
+██████╗ ████████╗███████╗██████╗  ██████╗ ██████╗  █████╗  ██████╗████████╗██╗   ██╗██╗     
+██╔══██╗╚══██╔══╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔════╝╚══██╔══╝╚██╗ ██╔╝██║     
+██████╔╝   ██║   █████╗  ██║  ██║██║  ██║██████╔╝███████║██║        ██║    ╚████╔╝ ██║     
+██╔═══╝    ██║   ██╔══╝  ██║  ██║██║  ██║██╔══██╗██╔══██║██║        ██║     ╚██╔╝  ██║     
+██║        ██║   ███████╗██████╔╝╚██████╔╝██║  ██║██║  ██║╚██████╗   ██║      ██║   ███████╗
+╚═╝        ╚═╝   ╚══════╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝      ╚═╝   ╚══════╝
+EOF
+    echo -e "${NC}"
+    echo -e "${GREEN}         GOSTDTGAMER PTERODACTYL PANEL INSTALLER${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+}
 
-curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz
-tar -xzvf panel.tar.gz
-chmod -R 755 storage/* bootstrap/cache/
+# Install Pterodactyl Panel
+install_panel() {
+    echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}📦 INSTALLING PTERODACTYL PANEL${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # Get domain
+    echo -ne "${WHITE}Enter your panel domain (e.g., panel.example.com or press Enter for IP): ${NC}"
+    read PANEL_DOMAIN
+    
+    if [[ -z "$PANEL_DOMAIN" ]]; then
+        PANEL_DOMAIN=$(curl -s ifconfig.me)
+        echo -e "${YELLOW}Using IP: $PANEL_DOMAIN${NC}"
+    fi
+    
+    # Step 1: Update system
+    echo -e "\n${WHITE}[1/8] Updating system...${NC}"
+    apt-get update -y
+    apt-get upgrade -y
+    
+    # Step 2: Install dependencies
+    echo -e "\n${WHITE}[2/8] Installing dependencies...${NC}"
+    apt-get install -y curl wget git nginx mysql-server redis-server \
+        tar unzip zip gzip ca-certificates gnupg lsb-release \
+        software-properties-common
+    
+    # Step 3: Install PHP 8.2
+    echo -e "\n${WHITE}[3/8] Installing PHP 8.2...${NC}"
+    apt-get install -y php8.2 php8.2-cli php8.2-common php8.2-curl \
+        php8.2-gd php8.2-mysql php8.2-mbstring php8.2-bcmath php8.2-xml \
+        php8.2-fpm php8.2-zip php8.2-redis
+    
+    # Step 4: Install Docker
+    echo -e "\n${WHITE}[4/8] Installing Docker...${NC}"
+    curl -fsSL https://get.docker.com | sh
+    systemctl enable docker
+    systemctl start docker
+    
+    # Step 5: Setup MySQL
+    echo -e "\n${WHITE}[5/8] Setting up MySQL...${NC}"
+    MYSQL_ROOT_PASS=$(openssl rand -base64 16)
+    MYSQL_PTERO_PASS=$(openssl rand -base64 16)
+    
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${MYSQL_ROOT_PASS}';" 2>/dev/null || true
+    mysql -e "CREATE DATABASE IF NOT EXISTS panel;" 2>/dev/null || true
+    mysql -e "CREATE USER IF NOT EXISTS 'pterodactyl'@'127.0.0.1' IDENTIFIED BY '${MYSQL_PTERO_PASS}';" 2>/dev/null || true
+    mysql -e "GRANT ALL PRIVILEGES ON panel.* TO 'pterodactyl'@'127.0.0.1' WITH GRANT OPTION;" 2>/dev/null || true
+    mysql -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+    
+    # Save credentials
+    cat > /root/pterodactyl_db_credentials.txt << EOF
+====================================
+PTERODACTYL DATABASE CREDENTIALS
+====================================
+MySQL Root Password: $MYSQL_ROOT_PASS
+Pterodactyl Database User: pterodactyl
+Pterodactyl Database Password: $MYSQL_PTERO_PASS
+Database Name: panel
+====================================
+EOF
+    
+    # Step 6: Download Panel
+    echo -e "\n${WHITE}[6/8] Downloading Pterodactyl Panel...${NC}"
+    cd /var/www
+    curl -Lo panel.tar.gz https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz
+    tar -xzvf panel.tar.gz
+    rm panel.tar.gz
+    mv panel-* pterodactyl
+    cd pterodactyl
+    
+    chmod -R 755 storage/* bootstrap/cache
+    
+    # Step 7: Install Composer and dependencies
+    echo -e "\n${WHITE}[7/8] Installing Composer and dependencies...${NC}"
+    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    cp .env.example .env
+    composer install --no-dev --optimize-autoloader
+    
+    # Step 8: Configure Panel
+    echo -e "\n${WHITE}[8/8] Configuring Panel...${NC}"
+    php artisan key:generate --force
+    
+    # Setup environment
+    php artisan p:environment:setup --author=admin@localhost --url=http://$PANEL_DOMAIN --timezone=UTC --cache=redis --session=redis --queue=redis --redis-host=127.0.0.1 --redis-pass= --redis-port=6379 --no-interaction
+    
+    php artisan p:environment:database --host=127.0.0.1 --port=3306 --database=panel --username=pterodactyl --password="${MYSQL_PTERO_PASS}" --no-interaction
+    
+    # Run migrations
+    php artisan migrate --seed --force
+    
+    # Create admin user
+    echo -e "\n${YELLOW}Create Admin User:${NC}"
+    echo -ne "${WHITE}Admin Email: ${NC}"
+    read ADMIN_EMAIL
+    [[ -z "$ADMIN_EMAIL" ]] && ADMIN_EMAIL="admin@localhost"
+    
+    echo -ne "${WHITE}Admin Username: ${NC}"
+    read ADMIN_USERNAME
+    [[ -z "$ADMIN_USERNAME" ]] && ADMIN_USERNAME="admin"
+    
+    echo -ne "${WHITE}Admin Password: ${NC}"
+    read -s ADMIN_PASSWORD
+    echo ""
+    [[ -z "$ADMIN_PASSWORD" ]] && ADMIN_PASSWORD="password123"
+    
+    php artisan p:user:make --email="$ADMIN_EMAIL" --username="$ADMIN_USERNAME" --name-first=Admin --name-last=User --password="$ADMIN_PASSWORD" --admin=1 --no-interaction
+    
+    chown -R www-data:www-data /var/www/pterodactyl/*
+    
+    # Configure Nginx
+    echo -e "\n${WHITE}Configuring Nginx...${NC}"
+    cat > /etc/nginx/sites-available/pterodactyl.conf << EOF
+server {
+    listen 80;
+    server_name $PANEL_DOMAIN;
+    root /var/www/pterodactyl/public;
+    index index.php;
 
-echo "Installing panel dependencies..."
-composer install --no-dev --optimize-autoloader
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
 
-echo "Creating environment..."
-cp .env.example .env
-php artisan key:generate --force
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+    }
 
-echo "Setup complete!"
-echo "Now configure database and run:"
-echo "php artisan p:environment:setup"
-echo "php artisan p:environment:database"
-echo "php artisan migrate --seed --force"
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOF
+    
+    ln -sf /etc/nginx/sites-available/pterodactyl.conf /etc/nginx/sites-enabled/
+    rm -f /etc/nginx/sites-enabled/default
+    systemctl restart nginx
+    systemctl restart php8.2-fpm
+    
+    # Setup queue worker
+    cat > /etc/systemd/system/pteroq.service << 'EOF'
+[Unit]
+Description=Pterodactyl Queue Worker
+After=redis-server.service
+
+[Service]
+User=www-data
+Group=www-data
+Restart=always
+ExecStart=/usr/bin/php /var/www/pterodactyl/artisan queue:work --queue=high,standard,low --sleep=3 --tries=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl enable --now pteroq
+    
+    # Setup cron
+    (crontab -l 2>/dev/null; echo "* * * * * php /var/www/pterodactyl/artisan schedule:run >> /dev/null 2>&1") | crontab -
+    
+    # Completion
+    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}✓ PTERODACTYL PANEL INSTALLED SUCCESSFULLY!${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${YELLOW}Panel Access:${NC} http://$PANEL_DOMAIN"
+    echo -e "${YELLOW}Admin Login:${NC} $ADMIN_USERNAME / $ADMIN_PASSWORD"
+    echo -e "${YELLOW}DB Credentials:${NC} /root/pterodactyl_db_credentials.txt"
+    echo ""
+    echo -e "${CYAN}Next Steps:${NC}"
+    echo -e "  1. Access your panel at http://$PANEL_DOMAIN"
+    echo -e "  2. Login with admin credentials"
+    echo -e "  3. Go to Admin → Nodes → Create New to add a node"
+    echo -e "  4. Install Wings on your node server"
+    echo ""
+}
+
+# Main menu
+main_menu() {
+    show_header
+    
+    echo -e "  ${GREEN}1)${NC} Install Pterodactyl Panel"
+    echo -e "  ${GREEN}2)${NC} Install Pterodactyl Wings Only"
+    echo -e "  ${GREEN}3)${NC} Uninstall Pterodactyl"
+    echo -e "  ${RED}0)${NC} Exit"
+    echo ""
+    echo -ne "${WHITE}Enter your choice: ${NC}"
+    read choice
+    
+    case $choice in
+        1) install_panel ;;
+        2) install_wings ;;
+        3) uninstall_panel ;;
+        0) exit 0 ;;
+        *) echo -e "${RED}Invalid choice${NC}"; sleep 2; main_menu ;;
+    esac
+}
+
+# Install Wings Only
+install_wings() {
+    echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}🚀 INSTALLING PTERODACTYL WINGS${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # Install Docker
+    echo -e "${WHITE}Installing Docker...${NC}"
+    curl -fsSL https://get.docker.com | sh
+    systemctl enable docker
+    systemctl start docker
+    
+    # Download Wings
+    echo -e "${WHITE}Downloading Wings...${NC}"
+    curl -L -o /usr/local/bin/wings https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64
+    chmod u+x /usr/local/bin/wings
+    
+    # Create directories
+    mkdir -p /etc/pterodactyl /var/lib/pterodactyl/volumes
+    
+    # Create service
+    cat > /etc/systemd/system/wings.service << 'EOF'
+[Unit]
+Description=Pterodactyl Wings Daemon
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+User=root
+WorkingDirectory=/etc/pterodactyl
+LimitNOFILE=4096
+PIDFile=/var/run/wings/daemon.pid
+ExecStart=/usr/local/bin/wings
+Restart=on-failure
+StartLimitInterval=600
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl daemon-reload
+    systemctl enable wings
+    
+    echo -e "\n${GREEN}✓ Wings installed!${NC}"
+    echo ""
+    echo -e "${YELLOW}To configure Wings:${NC}"
+    echo -e "  1. Go to your Pterodactyl Panel → Admin → Nodes"
+    echo -e "  2. Create a new node"
+    echo -e "  3. After creating, go to the node's Configuration tab"
+    echo -e "  4. Copy the configuration and save to /etc/pterodactyl/config.yml"
+    echo -e "  5. Run: systemctl start wings"
+    echo ""
+    echo -e "${CYAN}Or use the auto-configuration:${NC}"
+    echo -ne "${WHITE}Do you want to configure Wings now? (y/n): ${NC}"
+    read config_now
+    
+    if [[ "$config_now" == "y" ]]; then
+        echo -ne "${WHITE}Enter Panel URL (e.g., https://panel.example.com): ${NC}"
+        read PANEL_URL
+        echo -ne "${WHITE}Enter Node UUID: ${NC}"
+        read NODE_UUID
+        echo -ne "${WHITE}Enter Node Token: ${NC}"
+        read NODE_TOKEN
+        
+        cat > /etc/pterodactyl/config.yml << EOF
+debug: false
+uuid: $NODE_UUID
+token_id: $(echo "$NODE_TOKEN" | cut -d'.' -f1)
+token: $(echo "$NODE_TOKEN" | cut -d'.' -f2-)
+api:
+  host: $(echo "$PANEL_URL" | sed 's|https://||' | sed 's|http://||')
+  port: 443
+  ssl: true
+system:
+  data: /var/lib/pterodactyl/volumes
+  sftp:
+    bind_port: 2022
+EOF
+        
+        systemctl start wings
+        echo -e "${GREEN}✓ Wings configured and started!${NC}"
+    fi
+}
+
+# Uninstall Panel
+uninstall_panel() {
+    echo -e "\n${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${RED}⚠️  UNINSTALL PTERODACTYL${NC}"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -ne "${RED}Are you sure? This will delete everything! (y/n): ${NC}"
+    read confirm
+    
+    if [[ "$confirm" != "y" ]]; then
+        echo -e "${YELLOW}Cancelled${NC}"
+        return
+    fi
+    
+    echo -e "${WHITE}Stopping services...${NC}"
+    systemctl stop pteroq 2>/dev/null || true
+    systemctl stop wings 2>/dev/null || true
+    systemctl stop nginx 2>/dev/null || true
+    
+    echo -e "${WHITE}Removing files...${NC}"
+    rm -rf /var/www/pterodactyl
+    rm -rf /etc/pterodactyl
+    rm -f /etc/nginx/sites-available/pterodactyl.conf
+    rm -f /etc/nginx/sites-enabled/pterodactyl.conf
+    rm -f /etc/systemd/system/pteroq.service
+    rm -f /etc/systemd/system/wings.service
+    
+    echo -e "${WHITE}Removing database...${NC}"
+    mysql -e "DROP DATABASE IF EXISTS panel;" 2>/dev/null || true
+    mysql -e "DROP USER IF EXISTS 'pterodactyl'@'127.0.0.1';" 2>/dev/null || true
+    
+    echo -e "${GREEN}✓ Pterodactyl uninstalled!${NC}"
+}
+
+# Start
+check_root
+main_menu
